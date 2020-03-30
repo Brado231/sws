@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -40,13 +40,13 @@ class BR_MidiToggleCCLane;
 /******************************************************************************
 * Globals                                                                     *
 ******************************************************************************/
-extern SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_EnvSel> >             g_envSel;
-extern SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_CursorPos> >          g_cursorPos;
-extern SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_MidiNoteSel> >        g_midiNoteSel;
-extern SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_MidiCCEvents> >       g_midiCCEvents;
-extern SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_ItemMuteState> >      g_itemMuteState;
-extern SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_TrackSoloMuteState> > g_trackSoloMuteState;
-extern SWSProjConfig<BR_MidiToggleCCLane>                                 g_midiToggleHideCCLanes;
+extern SWSProjConfig<WDL_PtrList_DOD<BR_EnvSel> >             g_envSel;
+extern SWSProjConfig<WDL_PtrList_DOD<BR_CursorPos> >          g_cursorPos;
+extern SWSProjConfig<WDL_PtrList_DOD<BR_MidiNoteSel> >        g_midiNoteSel;
+extern SWSProjConfig<WDL_PtrList_DOD<BR_MidiCCEvents> >       g_midiCCEvents;
+extern SWSProjConfig<WDL_PtrList_DOD<BR_ItemMuteState> >      g_itemMuteState;
+extern SWSProjConfig<WDL_PtrList_DOD<BR_TrackSoloMuteState> > g_trackSoloMuteState;
+extern SWSProjConfig<BR_MidiToggleCCLane>                     g_midiToggleHideCCLanes;
 
 /******************************************************************************
 * Project state init/exit                                                     *

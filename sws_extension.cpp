@@ -1,7 +1,7 @@
 /******************************************************************************
 / sws_extension.cpp
 /
-/ Copyright (c) 2013 Tim Payne (SWS), Jeffos
+/ Copyright (c) 2013 and later Tim Payne (SWS), Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -55,6 +55,8 @@
 #include "IX/IX.h"
 #include "Breeder/BR.h"
 #include "Wol/wol.h"
+#include "nofish/nofish.h"
+#include "snooks/snooks.h"
 
 #define LOCALIZE_IMPORT_PREFIX "sws_"
 #ifdef LOCALIZE_IMPORT_PREFIX
@@ -117,7 +119,7 @@ bool hookCommandProc(int iCmd, int flag)
 				sReentrantCmds.Delete(sReentrantCmds.Find(cmd->id));
 				return true;
 			}
-#ifdef ACTION_DEBUG
+#ifdef _SWS_DEBUG
 			else
 			{
 				OutputDebugString("hookCommandProc - recursive action: ");
@@ -166,7 +168,7 @@ bool hookCommandProc2(KbdSectionInfo* sec, int cmdId, int val, int valhw, int re
 					sReentrantCmds.Delete(sReentrantCmds.Find(cmd->id));
 					return true;
 				}
-#ifdef ACTION_DEBUG
+#ifdef _SWS_DEBUG
 				else
 				{
 					OutputDebugString("hookCommandProc2 - recursive action: ");
@@ -206,7 +208,7 @@ int toggleActionHook(int iCmd)
 				sReentrantCmds.Delete(sReentrantCmds.Find(cmd->id));
 				return state;
 			}
-#ifdef ACTION_DEBUG
+#ifdef _SWS_DEBUG
 			else
 			{
 				OutputDebugString("toggleActionHook - recursive action: ");
@@ -276,7 +278,7 @@ int SWSRegisterCmds(COMMAND_T* pCommands, const char* cFile, bool localize)
 	return 1;
 }
 
-// Make and register a dynamic action (created at runtime)
+// Make and register a dynamic action (created/removed at runtime)
 // If cmdId==0, get command ID from Reaper (use the provided cmdId otherwise)
 // Note: SWSFreeUnregisterDynamicCmd() can be used to free/unregister such an action
 int SWSCreateRegisterDynamicCmd(int uniqueSectionId, int cmdId, void(*doCommand)(COMMAND_T*), void(*onAction)(COMMAND_T*, int, int, int, HWND), int(*getEnabled)(COMMAND_T*), const char* cID, const char* cDesc, const char* cMenu, INT_PTR user, const char* cFile, bool localize)
@@ -294,14 +296,16 @@ int SWSCreateRegisterDynamicCmd(int uniqueSectionId, int cmdId, void(*doCommand)
 	return SWSRegisterCmd(ct, cFile, cmdId, localize);
 }
 
-void SWSFreeUnregisterDynamicCmd(int id)
+bool SWSFreeUnregisterDynamicCmd(int id)
 {
 	if (COMMAND_T* ct = SWSUnregisterCmd(id))
 	{
 		free((void*)ct->accel.desc);
 		free((void*)ct->id);
 		DELETE_NULL(ct);
+		return true;
 	}
+	return false;
 }
 
 // Returns the COMMAND_T entry (so it can be freed if necessary)
@@ -356,7 +360,7 @@ void ActionsList(COMMAND_T*)
 				if (COMMAND_T* cmd = g_commands.Enumerate(i, NULL, NULL))
 				{
 					WDL_String* pFn = g_cmdFiles.Get(cmd->accel.accel.cmd, NULL);
-					sprintf(cBuf, "\"%s\",%s,%d,_%s\n", cmd->accel.desc, pFn ? pFn->Get() : "", cmd->accel.accel.cmd, cmd->id);
+					snprintf(cBuf, sizeof(cBuf), "\"%s\",%s,%d,_%s\n", cmd->accel.desc, pFn ? pFn->Get() : "", cmd->accel.accel.cmd, cmd->id);
 					fputs(cBuf, f);
 				}
 			}
@@ -615,7 +619,10 @@ void ErrMsg(const char* errmsg, bool wantblabla=true)
 	}
 }
 
-#define IMPAPI(x)       if (!errcnt && !((*((void **)&(x)) = (void *)rec->GetFunc(#x)))) errcnt++;
+// IMPAPI: maps mandatory API functions, i.e. forces users to upgrade REAPER if these functions are not found
+// IMPAP_OPT: maps optional API functions. Such function pointers will be NULL otherwise.
+#define IMPAPI(x)       if (!errcnt && !((*(void **)&(x)) = (void *)rec->GetFunc(#x))) errcnt++;
+#define IMPAP_OPT(x)    *((void **)&(x)) = (void *)rec->GetFunc(#x);
 #define ERR_RETURN(a)   { ErrMsg(a); goto error; }
 
 extern "C"
@@ -660,11 +667,11 @@ error:
 			return 0; // makes REAPER unloading us
 		}
 
-
-		int errcnt=0; // IMPAPI failed if >0
-
 		if (rec->caller_version != REAPER_PLUGIN_VERSION)
 			ERR_RETURN("Wrong REAPER_PLUGIN_VERSION!")
+
+		g_hInst = hInstance;
+		g_hwndParent = rec->hwnd_main;
 
 		if (!rec->GetFunc)
 			ERR_RETURN("Null rec->GetFunc ptr.")
@@ -672,6 +679,10 @@ error:
 #ifdef _SWS_LOCALIZATION
 		IMPORT_LOCALIZE_RPLUG(rec);
 #endif
+
+
+		// Mandatory API functions
+		int errcnt=0; // IMPAPI failed if >0
 
 		IMPAPI(plugin_register); // keep those first
 		IMPAPI(IsREAPER);
@@ -688,17 +699,25 @@ error:
 		IMPAPI(ApplyNudge);
 		IMPAPI(AttachWindowTopmostButton);
 		IMPAPI(AttachWindowResizeGrip);
-		IMPAPI(Audio_RegHardwareHook);
 		IMPAPI(AudioAccessorValidateState);
+		IMPAPI(Audio_Init); // v5.111+
+		IMPAPI(Audio_Quit); // v5.111+
+		IMPAPI(Audio_RegHardwareHook);
+/* unused
+		IMPAPI(Audio_RegHardwareHook);
+*/
+		IMPAPI(ColorToNative)
 		IMPAPI(CoolSB_GetScrollInfo);
 		IMPAPI(CoolSB_SetScrollInfo);
 		IMPAPI(CountActionShortcuts);
+		IMPAPI(CountAutomationItems);
 		IMPAPI(CountEnvelopePoints); // v5pre4+
-		IMPAPI(CountMediaItems);
+		IMPAPI(CountEnvelopePointsEx) // v5.40+
+		IMPAPI(CountMediaItems); // O(N): should be banned from the extension, ideally -- don't use it in loops, at least
 		IMPAPI(CountProjectMarkers);
-		IMPAPI(CountSelectedMediaItems);
-		IMPAPI(CountSelectedTracks);
-		IMPAPI(CountTakeEnvelopes) // v5pre12+
+		IMPAPI(CountSelectedMediaItems); // O(MN): should be banned from the extension, ideally -- don't use it in loops, at least
+		IMPAPI(CountSelectedTracks); // exclude master + O(N): should be banned from the extension, ideally -- don't use it in loops, at least
+		IMPAPI(CountTakeEnvelopes) // v5pre12+ -- O(N): don't use it in loops
 		IMPAPI(CountTakes);
 		IMPAPI(CountTCPFXParms);
 		IMPAPI(CountTempoTimeSigMarkers);
@@ -709,6 +728,7 @@ error:
 		IMPAPI(CreateNewMIDIItemInProj);
 		IMPAPI(CreateTakeAudioAccessor);
 		IMPAPI(CreateTrackAudioAccessor);
+		IMPAPI(CreateTrackSend); // v5.15pre1+
 		IMPAPI(CSurf_FlushUndo);
 		IMPAPI(CSurf_GoEnd);
 		IMPAPI(CSurf_OnMuteChange);
@@ -722,6 +742,7 @@ error:
 		IMPAPI(CSurf_TrackToID);
 		IMPAPI(DB2SLIDER);
 		IMPAPI(DeleteEnvelopePointRange); // v5pre5+
+		IMPAPI(DeleteEnvelopePointRangeEx); // v5.4pre3+
 		IMPAPI(DeleteActionShortcut);
 		IMPAPI(DeleteProjectMarker);
 		IMPAPI(DeleteProjectMarkerByIndex);
@@ -746,6 +767,7 @@ error:
 		IMPAPI(EnumProjects);
 		IMPAPI(Envelope_Evaluate); // v5pre4+
 		IMPAPI(Envelope_SortPoints); // v5pre4+
+		IMPAPI(Envelope_SortPointsEx) // v5.4pre3+
 		IMPAPI(file_exists);
 		IMPAPI(format_timestr);
 		IMPAPI(format_timestr_pos);
@@ -753,6 +775,7 @@ error:
 		IMPAPI(FreeHeapPtr);
 		IMPAPI(GetActionShortcutDesc);
 		IMPAPI(GetActiveTake);
+		IMPAPI(GetAllProjectPlayStates); // v5.111+
 		IMPAPI(GetAppVersion);
 		IMPAPI(GetAudioAccessorEndTime);
 		IMPAPI(GetAudioAccessorHash);
@@ -767,8 +790,11 @@ error:
 		IMPAPI(GetCursorPositionEx);
 		IMPAPI(GetEnvelopeName);
 		IMPAPI(GetEnvelopePoint); // v5pre4
-		IMPAPI(GetEnvelopePointByTime) // v5pre4
+		IMPAPI(GetEnvelopePointEx); // v5.40+
+		IMPAPI(GetEnvelopePointByTime); // v5pre4
+		IMPAPI(GetEnvelopePointByTimeEx); // v5.40+
 		IMPAPI(GetEnvelopeScalingMode); // v5pre13+
+		IMPAPI(GetEnvelopeStateChunk);
 		IMPAPI(GetExePath);
 		IMPAPI(GetFocusedFX);
 		IMPAPI(GetFXEnvelope); // v5pre5+
@@ -778,13 +804,14 @@ error:
 		IMPAPI(GetIconThemeStruct);
 		IMPAPI(GetInputChannelName);
 		IMPAPI(GetItemEditingTime2);
+		IMPAPI(GetLastMarkerAndCurRegion); // v4.60+
 		IMPAPI(GetLastTouchedFX);
 		IMPAPI(GetLastTouchedTrack);
 		IMPAPI(GetMainHwnd);
 		IMPAPI(GetMasterMuteSoloFlags);
 		IMPAPI(GetMasterTrackVisibility);
 		IMPAPI(GetMasterTrack);
-		IMPAPI(GetMediaItem);
+		IMPAPI(GetMediaItem); // O(N): should be banned from the extension, ideally
 		IMPAPI(GetMediaItem_Track);
 		IMPAPI(GetMediaItemInfo_Value);
 		IMPAPI(GetMediaItemNumTakes);
@@ -812,25 +839,33 @@ error:
 		IMPAPI(GetPlayPosition2Ex);
 		IMPAPI(GetPlayState);
 		IMPAPI(GetPlayStateEx);
+		IMPAPI(GetProjectLength);
 		IMPAPI(GetProjectPath);
 		IMPAPI(GetProjectStateChangeCount);
 		IMPAPI(GetProjectTimeSignature2);
 		IMPAPI(GetResourcePath);
 		IMPAPI(GetSelectedEnvelope);
-		IMPAPI(GetSelectedMediaItem);
-		IMPAPI(GetSelectedTrack);
+		IMPAPI(GetSelectedMediaItem); // O(MN): should be banned from the extension, ideally
+		IMPAPI(GetSelectedTrack); // exclude master + O(N): should be banned from the extension, ideally
 		IMPAPI(GetSelectedTrackEnvelope);
 		IMPAPI(GetSet_ArrangeView2);
+		IMPAPI(GetSetAutomationItemInfo);
 		IMPAPI(GetSetEnvelopeState);
 		IMPAPI(GetSetMediaItemInfo);
 		IMPAPI(GetSetMediaItemTakeInfo);
+		IMPAPI(GetSetMediaItemTakeInfo_String);
 		IMPAPI(GetMediaSourceLength); // v5.0pre3+
 		IMPAPI(GetSetMediaTrackInfo);
+		IMPAPI(GetSetMediaTrackInfo_String);
 		IMPAPI(GetSetObjectState);
 		IMPAPI(GetSetObjectState2);
+		IMPAPI(GetSetProjectNotes); // v5.15pre1+
 		IMPAPI(GetSetRepeat);
+		IMPAPI(GetSetTrackGroupMembership); // v5.21pre5+
+		IMPAPI(GetSetTrackGroupMembershipHigh); // v5.70+
 		IMPAPI(GetTempoTimeSigMarker);
 		IMPAPI(GetTakeEnvelopeByName);
+		IMPAPI(GetTakeName);
 		IMPAPI(GetTakeStretchMarker);
 		IMPAPI(GetSetTrackSendInfo);
 		IMPAPI(GetSetTrackState);
@@ -848,6 +883,7 @@ error:
 		IMPAPI(GetToggleCommandStateThroughHooks);
 		IMPAPI(GetTooltipWindow);
 		IMPAPI(GetTrack);
+		IMPAPI(GetTrackAutomationMode);
 		IMPAPI(GetTrackGUID);
 		IMPAPI(GetTrackEnvelope);
 		IMPAPI(GetTrackEnvelopeByName);
@@ -865,11 +901,15 @@ error:
 		IMPAPI(GSC_mainwnd);
 		IMPAPI(guidToString);
 		IMPAPI(Help_Set);
+		IMPAPI(InsertAutomationItem);
 		IMPAPI(InsertMedia);
 		IMPAPI(InsertEnvelopePoint); // v5pre4+
+		IMPAPI(InsertEnvelopePointEx); // v5.4pre3+
 		IMPAPI(InsertTrackAtIndex);
 		IMPAPI(IsMediaExtension);
-		(*((void **)&(IsProjectDirty)) = (void *)rec->GetFunc("IsProjectDirty"));
+		IMPAPI(IsMediaItemSelected);
+		IMPAPI(IsProjectDirty);
+		IMPAPI(IsTrackVisible);
 		IMPAPI(kbd_enumerateActions);
 		IMPAPI(kbd_formatKeyName);
 		IMPAPI(kbd_getCommandName);
@@ -950,6 +990,7 @@ error:
 		IMPAPI(PreventUIRefresh);
 		IMPAPI(projectconfig_var_addr);
 		IMPAPI(projectconfig_var_getoffs);
+		IMPAPI(realloc_cmd_ptr); // v5.965+
 		IMPAPI(RefreshToolbar);
 		IMPAPI(RefreshToolbar2); // v5pre8+
 #ifdef _WIN32
@@ -958,6 +999,7 @@ error:
 		IMPAPI(RenderFileSection);
 		IMPAPI(Resample_EnumModes);
 		IMPAPI(Resampler_Create);
+		IMPAPI(RemoveTrackSend); // v5.15pre1+
 		IMPAPI(ReverseNamedCommandLookup);
 		IMPAPI(ScaleFromEnvelopeMode); // v5pre13+
 		IMPAPI(ScaleToEnvelopeMode); // v5pre13+
@@ -973,11 +1015,14 @@ error:
 		IMPAPI(SetEditCurPos);
 		IMPAPI(SetEditCurPos2);
 		IMPAPI(SetEnvelopePoint); // v5pre4+
+		IMPAPI(SetEnvelopePointEx) // v5.40pre3
+		IMPAPI(SetEnvelopeStateChunk);
 		IMPAPI(SetGlobalAutomationOverride);
 		IMPAPI(SetMasterTrackVisibility);
 		IMPAPI(SetMediaItemInfo_Value);
 		IMPAPI(SetMediaItemLength);
 		IMPAPI(SetMediaItemPosition);
+		IMPAPI(SetMediaItemSelected);
 		IMPAPI(SetMediaItemTakeInfo_Value);
 		IMPAPI(SetMediaTrackInfo_Value);
 		IMPAPI(SetMixerScroll);
@@ -991,6 +1036,7 @@ error:
 		IMPAPI(SetProjectMarker4);
 		IMPAPI(SetTempoTimeSigMarker);
 		IMPAPI(SetTakeStretchMarker);
+		IMPAPI(SetTrackAutomationMode);
 		IMPAPI(SetTrackSelected);
 		IMPAPI(SetTrackSendUIPan);
 		IMPAPI(SetTrackSendUIVol);
@@ -1004,7 +1050,17 @@ error:
 		IMPAPI(SplitMediaItem);
 		IMPAPI(StopPreview);
 		IMPAPI(StopTrackPreview);
+		IMPAPI(StopTrackPreview2);
 		IMPAPI(stringToGuid);
+		IMPAPI(TakeFX_GetChainVisible);
+		IMPAPI(TakeFX_GetCount);
+		IMPAPI(TakeFX_GetFloatingWindow);
+		IMPAPI(TakeFX_GetOffline); // v5.95+
+		IMPAPI(TakeFX_SetOffline); // v5.95+
+		IMPAPI(TakeFX_SetOpen);
+		IMPAPI(TakeFX_Show);
+		IMPAPI(TakeIsMIDI);
+		IMPAPI(time_precise);
 		IMPAPI(TimeMap_GetDividedBpmAtTime);
 		IMPAPI(TimeMap_GetTimeSigAtTime);
 		IMPAPI(TimeMap_QNToTime);
@@ -1026,13 +1082,17 @@ error:
 		IMPAPI(TrackFX_GetCount);
 		IMPAPI(TrackFX_GetFXName);
 		IMPAPI(TrackFX_GetFXGUID);
+		IMPAPI(TrackFX_GetInstrument); // NF: didn't find when this was added in changelog
 		IMPAPI(TrackFX_GetNumParams);
 		IMPAPI(TrackFX_GetOpen);
 		IMPAPI(TrackFX_GetParam);
 		IMPAPI(TrackFX_GetParamName);
 		IMPAPI(TrackFX_GetPreset);
 		IMPAPI(TrackFX_GetPresetIndex);
+		IMPAPI(TrackFX_GetUserPresetFilename); // v5.15pre1+
 		IMPAPI(TrackFX_NavigatePresets);
+		IMPAPI(TrackFX_GetOffline); // v5.95+
+		IMPAPI(TrackFX_SetOffline); // v5.95+
 		IMPAPI(TrackFX_SetEnabled);
 		IMPAPI(TrackFX_SetOpen);
 		IMPAPI(TrackFX_SetParam);
@@ -1050,20 +1110,17 @@ error:
 		IMPAPI(Undo_OnStateChange);
 		IMPAPI(Undo_OnStateChange_Item);
 		IMPAPI(Undo_OnStateChange2);
-		IMPAPI(Undo_OnStateChangeEx);
-		IMPAPI(Undo_OnStateChangeEx2);
+		IMPAPI(Undo_OnStateChangeEx); // note: the last param "trackparm" is ignored ATM (v5.15pre6)
+		IMPAPI(Undo_OnStateChangeEx2); // note: the last param "trackparm" is ignored ATM (v5.15pre6)
 		IMPAPI(UpdateArrange);
 		IMPAPI(UpdateItemInProject);
 		IMPAPI(UpdateTimeline);
-		IMPAPI(ValidatePtr); //JFB!!! todo: check all calls: ValidatePtr2() may be needed instead
-
-		g_hInst = hInstance;
-		g_hwndParent = GetMainHwnd&&GetMainHwnd()?GetMainHwnd():0;
+		IMPAPI(ValidatePtr);
 
 		if (errcnt)
 		{
 			char txt[2048]="";
-			_snprintfSafe(txt, sizeof(txt),
+			snprintf(txt, sizeof(txt),
 					// keep the message on a single line (for the LangPack generator)
 					__LOCALIZE_VERFMT("The version of SWS extension you have installed is incompatible with your version of REAPER. You probably have a REAPER version less than v%d.%d%.0d installed.\r\nPlease install the latest version of REAPER from www.reaper.fm.","sws_mbox"),
 					REA_VERSION);
@@ -1072,7 +1129,10 @@ error:
 			goto error;
 		}
 
-		// check for dupe/clone
+		// Optional API functions (check for NULL if using!) 
+		IMPAP_OPT(GetEnvelopeInfo_Value); // 5.982+
+
+		// Look for SWS dupe/clone
 		if (rec->GetFunc("SNM_GetIntConfigVar"))
 		{
 			WDL_FastString dir1, dir2, mypath(__LOCALIZE("Unknown","sws_mbox")), conflict;
@@ -1115,7 +1175,7 @@ error:
 #endif
 
 			char txt[8192]="";
-			_snprintfSafe(txt, sizeof(txt),
+			snprintf(txt, sizeof(txt),
 			// keep the message on a single line (for the LangPack generator)
 			__LOCALIZE_VERFMT("Several versions of the SWS extension (or SWS clones) are installed!\n\nThis SWS extension instance will not be loaded:\n- Version: %d.%d.%d #%d\n- Location: %s\n\nPlease quit REAPER and remove the conflicting extension %s.\n\nNote: REAPER will look for extension plugins in the following order/folders:\n\t%s\n\t%s","sws_mbox"),
 				SWS_VERSION,
@@ -1181,6 +1241,10 @@ error:
 			ERR_RETURN("Breeder init error.")
 		if (!WOL_Init())
 			ERR_RETURN("Wol init error.")
+		if (!nofish_Init())
+			ERR_RETURN("nofish init error.")
+		if (!snooks_Init())
+			ERR_RETURN("snooks init error.")
 		if (!SNM_Init(rec)) // keep it as the last init (for cycle actions)
 			ERR_RETURN("S&M init error.")
 
@@ -1211,10 +1275,10 @@ error:
 
 
 #ifndef _WIN32 // MAC resources
-#include "../WDL/swell/swell-dlggen.h"
+#include "WDL/swell/swell-dlggen.h"
 #include "sws_extension.rc_mac_dlg"
 #undef BEGIN
 #undef END
-#include "../WDL/swell/swell-menugen.h"
+#include "WDL/swell/swell-menugen.h"
 #include "sws_extension.rc_mac_menu"
 #endif

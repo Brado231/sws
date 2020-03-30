@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -39,7 +39,7 @@
 * Globals                                                                     *
 ******************************************************************************/
 static BR_MouseInfo g_mouseInfo(BR_MouseInfo::MODE_ALL, false);
-WDL_PtrList_DeleteOnDestroy<BR_Envelope> g_script_brenvs;  // just to validate function parameters
+WDL_PtrList_DOD<BR_Envelope> g_script_brenvs; // just to validate function parameters
 
 /******************************************************************************
 * ReaScript export                                                            *
@@ -139,7 +139,7 @@ bool BR_EnvGetPoint (BR_Envelope* envelope, int id, double* positionOut, double*
 	return false;
 }
 
-void BR_EnvGetProperties (BR_Envelope* envelope, bool* activeOut, bool* visibleOut, bool* armedOut, bool* inLaneOut, int* laneHeightOut, int* defaultShapeOut, double* minValueOut, double* maxValueOut, double* centerValueOut, int* typeOut, bool* faderScalingOut)
+void BR_EnvGetProperties (BR_Envelope* envelope, bool* activeOut, bool* visibleOut, bool* armedOut, bool* inLaneOut, int* laneHeightOut, int* defaultShapeOut, double* minValueOut, double* maxValueOut, double* centerValueOut, int* typeOut, bool* faderScalingOut, int* AIoptionsOut)
 {
 	if (envelope && g_script_brenvs.Find(envelope)>=0)
 	{
@@ -153,6 +153,7 @@ void BR_EnvGetProperties (BR_Envelope* envelope, bool* activeOut, bool* visibleO
 		WritePtr(maxValueOut,        envelope->LaneMaxValue());
 		WritePtr(centerValueOut,     envelope->LaneCenterValue());
 		WritePtr(faderScalingOut,    envelope->IsScaledToFader());
+		WritePtr(AIoptionsOut,       envelope->GetAIoptions());
 
 		if (typeOut)
 		{
@@ -186,6 +187,7 @@ void BR_EnvGetProperties (BR_Envelope* envelope, bool* activeOut, bool* visibleO
 		WritePtr(centerValueOut,     0.0);
 		WritePtr(typeOut,            -1);
 		WritePtr(faderScalingOut,    false);
+		WritePtr(AIoptionsOut,       -1);
 	}
 }
 
@@ -196,7 +198,7 @@ bool BR_EnvSetPoint (BR_Envelope* envelope, int id, double position, double valu
 	return false;
 }
 
-void BR_EnvSetProperties (BR_Envelope* envelope, bool active, bool visible, bool armed, bool inLane, int laneHeight, int defaultShape, bool faderScaling)
+void BR_EnvSetProperties (BR_Envelope* envelope, bool active, bool visible, bool armed, bool inLane, int laneHeight, int defaultShape, bool faderScaling, int* AIoptionsOptional)
 {
 	if (envelope && g_script_brenvs.Find(envelope)>=0)
 	{
@@ -208,6 +210,15 @@ void BR_EnvSetProperties (BR_Envelope* envelope, bool active, bool visible, bool
 		envelope->SetScalingToFader(faderScaling);
 		if (defaultShape >= 0 && defaultShape <= 5)
 			envelope->SetDefaultShape(defaultShape);
+
+		double runningReaVer = atof(GetAppVersion());
+		if (runningReaVer >= 5.979)
+		{
+			// optional param, != NULL -> caller provided this param
+			// works properly since REAPER v5.979
+			if (AIoptionsOptional != NULL && *AIoptionsOptional >= -1 && *AIoptionsOptional <= 6) 
+				envelope->SetAIoptions(*AIoptionsOptional);
+		}
 	}
 }
 
@@ -227,7 +238,7 @@ double BR_EnvValueAtPos (BR_Envelope* envelope, double position)
 void BR_GetArrangeView (ReaProject* proj, double* startPositionOut, double* endPositionOut)
 {
 	double start, end;
-	GetSetArrangeView(NULL, false, &start, &end);
+	GetSetArrangeView(proj, false, &start, &end);
 
 	WritePtr(startPositionOut, start);
 	WritePtr(endPositionOut, end);
@@ -243,8 +254,8 @@ void BR_GetCurrentTheme (char* themePathOut, int themePathOut_sz, char* themeNam
 	WDL_FastString fullThemePath;
 	WDL_FastString themeName = GetCurrentThemeName(&fullThemePath);
 
-	_snprintfSafe(themePathOut, themePathOut_sz, "%s", fullThemePath.Get());
-	_snprintfSafe(themeNameOut, themeNameOut_sz, "%s", themeName.Get());
+	snprintf(themePathOut, themePathOut_sz, "%s", fullThemePath.Get());
+	snprintf(themeNameOut, themeNameOut_sz, "%s", themeName.Get());
 }
 
 MediaItem* BR_GetMediaItemByGUID (ReaProject* proj, const char* guidStringIn)
@@ -266,7 +277,7 @@ void BR_GetMediaItemGUID (MediaItem* item, char* guidStringOut, int guidStringOu
 		char guid[64];
 		if (item) guidToString((GUID*)GetSetMediaItemInfo(item, "GUID", NULL), guid);
 		else      guidToString(&GUID_NULL, guid);
-		_snprintfSafe(guidStringOut, guidStringOut_sz, "%s", guid);
+		snprintf(guidStringOut, guidStringOut_sz, "%s", guid);
 	}
 }
 
@@ -284,7 +295,7 @@ bool BR_GetMediaItemImageResource (MediaItem* item, char* imageOut, int imageOut
 		resourceFound =  !!p.Parse(SNM_GET_CHUNK_CHAR, 1, "ITEM", "RESOURCEFN",       0, 1, image,      NULL, "VOLPAN");
 		if (resourceFound) p.Parse(SNM_GET_CHUNK_CHAR, 1, "ITEM", "IMGRESOURCEFLAGS", 0, 1, imageFlags, NULL, "VOLPAN");
 
-		if (imageOut && imageOut_sz > 0) _snprintfSafe(imageOut, imageOut_sz, "%s", image);
+		if (imageOut && imageOut_sz > 0) snprintf(imageOut, imageOut_sz, "%s", image);
 		WritePtr(imageFlagsOut, atoi(imageFlags));
 	}
 	return resourceFound;
@@ -297,7 +308,7 @@ void BR_GetMediaItemTakeGUID (MediaItem_Take* take, char* guidStringOut, int gui
 		char guid[64];
 		if (take) guidToString((GUID*)GetSetMediaItemTakeInfo(take, "GUID", NULL), guid);
 		else      guidToString(&GUID_NULL, guid);
-		_snprintfSafe(guidStringOut, guidStringOut_sz, "%s", guid);
+		snprintf(guidStringOut, guidStringOut_sz, "%s", guid);
 	}
 }
 
@@ -334,7 +345,7 @@ void BR_GetMediaTrackGUID (MediaTrack* track, char* guidStringOut, int guidStrin
 		char guid[64];
 		if (track) guidToString(TrackToGuid(track), guid);
 		else       guidToString(&GUID_NULL, guid);
-		_snprintfSafe(guidStringOut, guidStringOut_sz, "%s", guid);
+		snprintf(guidStringOut, guidStringOut_sz, "%s", guid);
 	}
 }
 
@@ -347,12 +358,12 @@ void BR_GetMediaTrackLayouts (MediaTrack* track, char* mcpLayoutNameOut, int mcp
 		if (mcpLayoutNameOut)
 		{
 			const char *l = (const char*)GetSetMediaTrackInfo(track, "P_MCP_LAYOUT", NULL);
-			if (l) _snprintfSafe(mcpLayoutNameOut, mcpLayoutNameOut_sz, "%s", l);
+			if (l) snprintf(mcpLayoutNameOut, mcpLayoutNameOut_sz, "%s", l);
 		}
 		if (tcpLayoutNameOut)
 		{
 			const char *l = (const char*)GetSetMediaTrackInfo(track, "P_TCP_LAYOUT", NULL);
-			if (l) _snprintfSafe(tcpLayoutNameOut, tcpLayoutNameOut_sz, "%s", l);
+			if (l) snprintf(tcpLayoutNameOut, tcpLayoutNameOut_sz, "%s", l);
 		}
 	}
 }
@@ -406,7 +417,7 @@ bool BR_GetMidiTakePoolGUID (MediaItem_Take* take, char* guidStringOut, int guid
 				{
 					LineParser lp(false);
 					lp.parse(pooledEventsLine.Get());
-					_snprintfSafe(guidStringOut, guidStringOut_sz, "%s", lp.gettoken_str(1));
+					snprintf(guidStringOut, guidStringOut_sz, "%s", lp.gettoken_str(1));
 				}
 			}
 		}
@@ -427,9 +438,9 @@ void BR_GetMouseCursorContext (char* windowOut, int windowOut_sz, char* segmentO
 {
 	g_mouseInfo.Update();
 
-	if (windowOut  && windowOut_sz  > 0) _snprintfSafe(windowOut,  windowOut_sz,  "%s", g_mouseInfo.GetWindow());
-	if (segmentOut && segmentOut_sz > 0) _snprintfSafe(segmentOut, segmentOut_sz, "%s", g_mouseInfo.GetSegment());
-	if (detailsOut && detailsOut_sz > 0) _snprintfSafe(detailsOut, detailsOut_sz, "%s", g_mouseInfo.GetDetails());
+	if (windowOut  && windowOut_sz  > 0) snprintf(windowOut,  windowOut_sz,  "%s", g_mouseInfo.GetWindow());
+	if (segmentOut && segmentOut_sz > 0) snprintf(segmentOut, segmentOut_sz, "%s", g_mouseInfo.GetSegment());
+	if (detailsOut && detailsOut_sz > 0) snprintf(detailsOut, detailsOut_sz, "%s", g_mouseInfo.GetDetails());
 }
 
 TrackEnvelope* BR_GetMouseCursorContext_Envelope (bool* takeEnvelopeOut)
@@ -598,14 +609,19 @@ bool BR_IsTakeMidi (MediaItem_Take* take, bool* inProjectMidiOut)
 	return IsMidi(take, inProjectMidiOut);
 }
 
+bool BR_IsMidiOpenInInlineEditor(MediaItem_Take* take)
+{
+	return IsOpenInInlineEditor(take);
+}
+
 MediaItem* BR_ItemAtMouseCursor (double* positionOut)
 {
 	return ItemAtMouseCursor(positionOut);
 }
 
-bool BR_MIDI_CCLaneRemove (HWND midiEditor, int laneId)
+bool BR_MIDI_CCLaneRemove (void* midiEditor, int laneId)
 {
-	MediaItem_Take* take = MIDIEditor_GetTake(midiEditor);
+	MediaItem_Take* take = MIDIEditor_GetTake((HWND)midiEditor);
 	if (take)
 	{
 		MediaItem* item = GetMediaItemTake_Item(take);
@@ -619,7 +635,8 @@ bool BR_MIDI_CCLaneRemove (HWND midiEditor, int laneId)
 			{
 				SNM_ChunkParserPatcher ptk(&takeChunk, false);
 
-				if (ptk.Parse(SNM_GET_SUBCHUNK_OR_LINE, 1, "SOURCE", "VELLANE", laneId, -1))
+				// NF: prevent trying to remove the only visible one, results in weird behaviour
+				if (ptk.Parse(SNM_GET_SUBCHUNK_OR_LINE, 1, "SOURCE", "VELLANE", laneId  == 0 ? 1 : laneId, -1))
 				{
 					ptk.RemoveLine("SOURCE", "VELLANE", 1, laneId);
 					return p.ReplaceTake(tkPos, tklen, ptk.GetChunk());
@@ -630,9 +647,9 @@ bool BR_MIDI_CCLaneRemove (HWND midiEditor, int laneId)
 	return false;
 }
 
-bool BR_MIDI_CCLaneReplace (HWND midiEditor, int laneId, int newCC)
+bool BR_MIDI_CCLaneReplace (void* midiEditor, int laneId, int newCC)
 {
-	MediaItem_Take* take = MIDIEditor_GetTake(midiEditor);
+	MediaItem_Take* take = MIDIEditor_GetTake((HWND)midiEditor);
 	int newLane = MapReaScriptCCToVelLane(newCC);
 
 	if (take && IsVelLaneValid(newLane))
@@ -673,7 +690,7 @@ void BR_SetArrangeView (ReaProject* proj, double startPosition, double endPositi
 
 bool BR_SetItemEdges (MediaItem* item, double startTime, double endTime)
 {
-	return TrimItem(item, startTime, endTime);
+	return TrimItem_UseNativeTrimActions(item, startTime, endTime);
 }
 
 void BR_SetMediaItemImageResource (MediaItem* item, const char* imageIn, int imageFlags)
@@ -900,21 +917,363 @@ bool BR_TrackFX_GetFXModuleName (MediaTrack* track, int fx, char* nameOut, int n
 		}
 	}
 
-	_snprintfSafe(nameOut, nameOutSz, "%s", module.Get());
+	snprintf(nameOut, nameOutSz, "%s", module.Get());
 	return found;
 }
 
-int BR_Win32_GetPrivateProfileString (const char* sectionName, const char* keyName, const char* defaultString, const char* filePath, char* stringOut, int stringOut_sz)
+int BR_Win32_CB_FindString(void* comboBoxHwnd, int startId, const char* string)
 {
+	if (comboBoxHwnd && string)
+		return (int)SendMessage((HWND)comboBoxHwnd, CB_FINDSTRING, (WPARAM)startId, (LPARAM)string);
+	else
+		return CB_ERR;
+}
+
+int BR_Win32_CB_FindStringExact(void* comboBoxHwnd, int startId, const char* string)
+{
+	if (comboBoxHwnd && string)
+		return (int)SendMessage((HWND)comboBoxHwnd, CB_FINDSTRINGEXACT, (WPARAM)startId, (LPARAM)string);
+	else
+		return CB_ERR;
+}
+
+void BR_Win32_ClientToScreen(void* hwnd, int xIn, int yIn, int* xOut, int* yOut)
+{
+	POINT p;
+	p.x = xIn;
+	p.y = yIn;
+
+	ClientToScreen((HWND)hwnd, &p);
+	WritePtr(xOut, (int)p.x);
+	WritePtr(yOut, (int)p.y);
+}
+
+void* BR_Win32_FindWindowEx(const char* hwndParent, const char* hwndChildAfter, const char* className, const char* windowName, bool searchClass, bool searchName)
+{
+	return (void*)FindWindowEx((HWND)BR_Win32_StringToHwnd(hwndParent), (HWND)BR_Win32_StringToHwnd(hwndChildAfter), searchClass ? className : NULL, searchName ? windowName : NULL);
+}
+
+int BR_Win32_GET_X_LPARAM(int lParam)
+{
+	return GET_X_LPARAM(lParam);
+}
+
+int BR_Win32_GET_Y_LPARAM(int lParam)
+{
+	return GET_Y_LPARAM(lParam);
+}
+
+int BR_Win32_GetConstant(const char* constantName)
+{
+#ifndef _WIN32
+#define SW_MAXIMIZE         0x3
+#define SWP_NOOWNERZORDER   0x0200
+#define WS_MAXIMIZE         0x01000000L
+#define WS_MAXIMIZEBOX      0x00010000L
+#define WS_MINIMIZEBOX      0x00020000L
+#define WS_OVERLAPPED       0x00000000L
+#define WS_OVERLAPPEDWINDOW WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+#endif
+
+	int constant = -1;
+	if (constantName)
+	{
+		if (!strcmp(constantName, "CB_ERR"))              constant = CB_ERR;
+		else if (!strcmp(constantName, "CB_GETCOUNT"))         constant = CB_GETCOUNT;
+		else if (!strcmp(constantName, "CB_GETCURSEL"))        constant = CB_GETCURSEL;
+		else if (!strcmp(constantName, "CB_SETCURSEL"))        constant = CB_SETCURSEL;
+		else if (!strcmp(constantName, "EM_SETSEL"))           constant = EM_SETSEL;
+		else if (!strcmp(constantName, "GW_CHILD"))            constant = GW_CHILD;
+		else if (!strcmp(constantName, "GW_HWNDFIRST"))        constant = GW_HWNDFIRST;
+		else if (!strcmp(constantName, "GW_HWNDLAST"))         constant = GW_HWNDLAST;
+		else if (!strcmp(constantName, "GW_HWNDNEXT"))         constant = GW_HWNDNEXT;
+		else if (!strcmp(constantName, "GW_HWNDPREV"))         constant = GW_HWNDPREV;
+		else if (!strcmp(constantName, "GW_OWNER"))            constant = GW_OWNER;
+		else if (!strcmp(constantName, "GWL_STYLE"))           constant = GWL_STYLE;
+		else if (!strcmp(constantName, "SW_HIDE"))             constant = SW_HIDE;
+		else if (!strcmp(constantName, "SW_MAXIMIZE"))         constant = SW_MAXIMIZE;
+		else if (!strcmp(constantName, "SW_SHOW"))             constant = SW_SHOW;
+		else if (!strcmp(constantName, "SW_SHOWMINIMIZED"))    constant = SW_SHOWMINIMIZED;
+		else if (!strcmp(constantName, "SW_SHOWNA"))           constant = SW_SHOWNA;
+		else if (!strcmp(constantName, "SW_SHOWNOACTIVATE"))   constant = SW_SHOWNOACTIVATE;
+		else if (!strcmp(constantName, "SW_SHOWNORMAL"))       constant = SW_SHOWNORMAL;
+		else if (!strcmp(constantName, "SWP_FRAMECHANGED"))    constant = SWP_FRAMECHANGED;
+		else if (!strcmp(constantName, "SWP_NOACTIVATE"))      constant = SWP_FRAMECHANGED;
+		else if (!strcmp(constantName, "SWP_NOMOVE"))          constant = SWP_NOMOVE;
+		else if (!strcmp(constantName, "SWP_NOOWNERZORDER"))   constant = SWP_NOOWNERZORDER;
+		else if (!strcmp(constantName, "SWP_NOSIZE"))          constant = SWP_NOSIZE;
+		else if (!strcmp(constantName, "SWP_NOZORDER"))        constant = SWP_NOZORDER;
+		else if (!strcmp(constantName, "VK_DOWN"))             constant = VK_DOWN;
+		else if (!strcmp(constantName, "VK_UP"))               constant = VK_UP;
+		else if (!strcmp(constantName, "WM_CLOSE"))            constant = WM_CLOSE;
+		else if (!strcmp(constantName, "WM_KEYDOWN"))          constant = WM_KEYDOWN;
+		else if (!strcmp(constantName, "WS_MAXIMIZE"))         constant = WS_MAXIMIZE;
+		else if (!strcmp(constantName, "WS_OVERLAPPEDWINDOW")) constant = WS_OVERLAPPEDWINDOW;
+		else                                                   constant = -1;
+	}
+
+#ifndef _WIN32
+#undef SW_MAXIMIZE
+#undef SWP_NOOWNERZORDER
+#undef WS_MAXIMIZE
+#undef WS_MAXIMIZE
+#undef WS_MAXIMIZEBOX
+#undef WS_MINIMIZEBOX
+#undef WS_OVERLAPPED
+#undef WS_OVERLAPPEDWINDOW
+#endif
+	return constant;
+}
+
+bool BR_Win32_GetCursorPos(int* xOut, int* yOut)
+{
+	POINT p;
+	bool result;
+#ifdef _WIN32
+	result = !!GetCursorPos(&p);
+#else
+	result = true;
+	GetCursorPos(&p);
+#endif
+
+	WritePtr(xOut, (int)p.x);
+	WritePtr(yOut, (int)p.y);
+	return result;
+}
+
+void* BR_Win32_GetFocus()
+{
+	return (void*)GetFocus();
+}
+
+void* BR_Win32_GetForegroundWindow()
+{
+	return (void*)GetForegroundWindow();
+}
+
+void* BR_Win32_GetMainHwnd()
+{
+	return (void*)g_hwndParent;
+}
+
+void* BR_Win32_GetMixerHwnd(bool* isDockedOut)
+{
+	HWND mixerHwnd = GetMixerWnd();
+
+	WritePtr(isDockedOut, DockIsChildOfDock(mixerHwnd, NULL) != -1);
+	return (void*)mixerHwnd;
+}
+
+void BR_Win32_GetMonitorRectFromRect(bool workingAreaOnly, int leftIn, int topIn, int rightIn, int bottomIn, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
+{
+	RECT r = { leftIn, topIn, rightIn, bottomIn };
+	RECT monitorRect = { 0, 0 ,0 , 0 };
+
+	GetMonitorRectFromRect(r, workingAreaOnly, &monitorRect);
+
+	WritePtr(leftOut, (int)monitorRect.left);
+	WritePtr(topOut, (int)monitorRect.top);
+	WritePtr(rightOut, (int)monitorRect.right);
+	WritePtr(bottomOut, (int)monitorRect.bottom);
+}
+
+void* BR_Win32_GetParent(void* hwnd)
+{
+	return (void*)GetParent((HWND)hwnd);
+}
+
+int BR_Win32_GetPrivateProfileString(const char* sectionName, const char* keyName, const char* defaultString, const char* filePath, char* stringOut, int stringOut_sz)
+{
+	if(!strlen(keyName))
+		return 0;
+
 	return (int)GetPrivateProfileString(sectionName, keyName, defaultString, stringOut, stringOut_sz, filePath);
 }
 
-int BR_Win32_ShellExecute (const char* operation, const char* file, const char* parameters, const char* directoy, int showFlags)
+bool BR_Win32_WritePrivateProfileString(const char* sectionName, const char* keyName, const char* value, const char* filePath)
 {
-	return (int)ShellExecute(g_hwndParent, operation, file, parameters, directoy, showFlags);
+	if (!strlen(keyName))
+		return 0;
+
+	return !!WritePrivateProfileString(sectionName, keyName, value, filePath);
 }
 
-bool BR_Win32_WritePrivateProfileString (const char* sectionName, const char* keyName, const char* value, const char* filePath)
+void* BR_Win32_GetWindow(void* hwnd, int cmd)
 {
-	return !!WritePrivateProfileString(sectionName, keyName, value, filePath);
+	return (void*)GetWindow((HWND)hwnd, cmd);
+}
+
+int BR_Win32_GetWindowLong(void* hwnd, int index)
+{
+	return (int)GetWindowLong((HWND)hwnd, index);
+}
+
+bool BR_Win32_GetWindowRect(void* hwnd, int* leftOut, int* topOut, int* rightOut, int* bottomOut)
+{
+	RECT r;
+	bool result = !!GetWindowRect((HWND)hwnd, &r);
+
+	WritePtr(leftOut, (int)r.left);
+	WritePtr(topOut, (int)r.top);
+	WritePtr(rightOut, (int)r.right);
+	WritePtr(bottomOut, (int)r.bottom);
+	return result;
+}
+
+int BR_Win32_GetWindowText(void* hwnd, char* textOut, int textOut_sz)
+{
+	return GetWindowText((HWND)hwnd, textOut, textOut_sz);
+}
+
+int BR_Win32_HIBYTE(int value)
+{
+	return HIBYTE(value);
+}
+
+int BR_Win32_HIWORD(int value)
+{
+	return HIWORD(value);
+}
+
+void BR_Win32_HwndToString(void* hwnd, char* stringOut, int stringOut_sz)
+{
+	snprintf(stringOut, stringOut_sz, "%lld", (long long)(HWND)hwnd);
+}
+
+bool BR_Win32_IsWindow(void* hwnd)
+{
+	return SWS_IsWindow((HWND)hwnd);
+}
+
+bool BR_Win32_IsWindowVisible(void* hwnd)
+{
+	return !!IsWindowVisible((HWND)hwnd);
+}
+
+int BR_Win32_LOBYTE(int value)
+{
+	return LOBYTE(value);
+}
+
+int BR_Win32_LOWORD(int value)
+{
+	return LOWORD(value);
+}
+
+int BR_Win32_MAKELONG(int low, int high)
+{
+	return MAKELONG(low, high);
+}
+
+int BR_Win32_MAKELPARAM(int low, int high)
+{
+	return MAKELPARAM(low, high);
+}
+
+int BR_Win32_MAKELRESULT(int low, int high)
+{
+	return MAKELRESULT(low, high);
+}
+
+int BR_Win32_MAKEWORD(int low, int high)
+{
+	return MAKEWORD(low, high);
+}
+
+int BR_Win32_MAKEWPARAM(int low, int high)
+{
+	return MAKEWPARAM(low, high);
+}
+
+void* BR_Win32_MIDIEditor_GetActive()
+{
+	return (void*)MIDIEditor_GetActive();
+}
+
+void BR_Win32_ScreenToClient(void* hwnd, int xIn, int yIn, int* xOut, int* yOut)
+{
+	POINT p;
+	p.x = xIn;
+	p.y = yIn;
+
+	ScreenToClient((HWND)hwnd, &p);
+	WritePtr(xOut, (int)p.x);
+	WritePtr(yOut, (int)p.y);
+}
+
+int BR_Win32_SendMessage(void* hwnd, int msg, int lParam, int wParam)
+{
+	return (int)SendMessage((HWND)hwnd, msg, lParam, wParam);
+}
+
+void* BR_Win32_SetFocus(void* hwnd)
+{
+#ifdef _WIN32
+	return (void*)SetFocus((HWND)hwnd);
+#else
+	SetFocus((HWND)hwnd);
+	return hwnd;
+#endif
+}
+
+int BR_Win32_SetForegroundWindow(void* hwnd)
+{
+#ifdef _WIN32
+	return SetForegroundWindow((HWND)hwnd);
+#else
+	SetForegroundWindow((HWND)hwnd);
+	return !!hwnd;
+#endif
+}
+
+int BR_Win32_SetWindowLong(void* hwnd, int index, int newLong)
+{
+	return SetWindowLong((HWND)hwnd, index, newLong);
+}
+
+bool BR_Win32_SetWindowPos(void* hwnd, const char* hwndInsertAfter, int x, int y, int width, int height, int flags)
+{
+	HWND insertAfter = NULL;
+	if (!strcmp(hwndInsertAfter, "HWND_BOTTOM"))    insertAfter = HWND_BOTTOM;
+	else if (!strcmp(hwndInsertAfter, "HWND_NOTOPMOST")) insertAfter = HWND_NOTOPMOST;
+	else if (!strcmp(hwndInsertAfter, "HWND_TOP"))       insertAfter = HWND_TOP;
+	else if (!strcmp(hwndInsertAfter, "HWND_TOPMOST"))   insertAfter = HWND_TOPMOST;
+	else                                                 insertAfter = (HWND)BR_Win32_StringToHwnd(hwndInsertAfter);
+
+#ifdef _WIN32
+	return !!SetWindowPos((HWND)hwnd, insertAfter, x, y, width, height, flags);
+#else
+	SetWindowPos((HWND)hwnd, insertAfter, x, y, width, height, flags);
+	return !!hwnd;
+#endif
+}
+
+int BR_Win32_ShellExecute(const char* operation, const char* file, const char* parameters, const char* directoy, int showFlags)
+{
+	return (int)(UINT_PTR)ShellExecute(g_hwndParent, operation, file, parameters, directoy, showFlags);
+}
+
+bool BR_Win32_ShowWindow(void* hwnd, int cmdShow)
+{
+#ifdef _WIN32
+	return !!ShowWindow((HWND)hwnd, cmdShow);
+#else
+	ShowWindow((HWND)hwnd, cmdShow);
+	return !!hwnd;
+#endif
+}
+
+void* BR_Win32_StringToHwnd(const char* string)
+{
+	long long hwnd = 0;
+	sscanf(string, "%256lld", &hwnd);
+	return (void*)(HWND)hwnd;
+}
+
+void* BR_Win32_WindowFromPoint(int x, int y)
+{
+	POINT p;
+	p.x = x;
+	p.y = y;
+	return (void*)WindowFromPoint(p);
 }

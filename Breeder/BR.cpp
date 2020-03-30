@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2012-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -96,11 +96,12 @@ void BR_MenuHook (COMMAND_T* ct, HMENU menu, int id)
 	{
 		// Disable the action "Flush FX on stop" if the option "Run FX when stopped" is turned off
 		if ((int)ct->user == 1)
-			EnableMenuItem(menu, id, (GetBit(*static_cast<int*>(GetConfigVar("runallonstop")), 0) ? MF_ENABLED : MF_GRAYED) | MF_BYPOSITION);
+			EnableMenuItem(menu, id,
+				(GetBit(*ConfigVar<int>("runallonstop"), 0) ? MF_ENABLED : MF_GRAYED) | MF_BYPOSITION);
 
 		// Disable the action to set "Run FX after stopping for" if the option "Run FX when stopped" is turned on
 		else if ((int)ct->user <= 0)
-			EnableMenuItem(menu, id, (!GetBit(*static_cast<int*>(GetConfigVar("runallonstop")), 0) ? MF_ENABLED : MF_GRAYED) | MF_BYPOSITION);
+			EnableMenuItem(menu, id, (!GetBit(*ConfigVar<int>("runallonstop"), 0) ? MF_ENABLED : MF_GRAYED) | MF_BYPOSITION);
 	}
 }
 
@@ -439,14 +440,16 @@ static COMMAND_T g_commandTable[] =
 	/******************************************************************************
 	* Loudness                                                                    *
 	******************************************************************************/
-	{ { DEFACCEL, "SWS/BR: Global loudness preferences..." },                    "BR_LOUDNESS_PREF",                ToggleLoudnessPref, NULL, 0, IsLoudnessPrefVisible},
-	{ { DEFACCEL, "SWS/BR: Analyze loudness..." },                               "BR_ANALAYZE_LOUDNESS_DLG",        AnalyzeLoudness,    NULL, 0, IsAnalyzeLoudnessVisible},
+	{ { DEFACCEL, "SWS/BR: Global loudness preferences..." },                           "BR_LOUDNESS_PREF",                ToggleLoudnessPref,         NULL, 0, IsLoudnessPrefVisible},
+	{ { DEFACCEL, "SWS/BR: Analyze loudness..." },                                      "BR_ANALAYZE_LOUDNESS_DLG",        AnalyzeLoudness,            NULL, 0, IsAnalyzeLoudnessVisible},
 
-	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected items/tracks..." },    "BR_NORMALIZE_LOUDNESS_ITEMS",     NormalizeLoudness,  NULL, 0, IsNormalizeLoudnessVisible},
-	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected items to -23 LUFS" },  "BR_NORMALIZE_LOUDNESS_ITEMS23",   NormalizeLoudness,  NULL, 1, },
-	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected items to 0 LU" },      "BR_NORMALIZE_LOUDNESS_ITEMS_LU",  NormalizeLoudness,  NULL, -1, },
-	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected tracks to -23 LUFS" }, "BR_NORMALIZE_LOUDNESS_TRACKS23",  NormalizeLoudness,  NULL, 2, },
-	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected tracks to 0 LU" },     "BR_NORMALIZE_LOUDNESS_TRACKS_LU", NormalizeLoudness,  NULL, -2, },
+	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected items/tracks..." },           "BR_NORMALIZE_LOUDNESS_ITEMS",     NormalizeLoudness,          NULL, 0, IsNormalizeLoudnessVisible},
+	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected items to -23 LUFS" },         "BR_NORMALIZE_LOUDNESS_ITEMS23",   NormalizeLoudness,          NULL, 1, },
+	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected items to 0 LU" },             "BR_NORMALIZE_LOUDNESS_ITEMS_LU",  NormalizeLoudness,          NULL, -1, },
+	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected tracks to -23 LUFS" },        "BR_NORMALIZE_LOUDNESS_TRACKS23",  NormalizeLoudness,          NULL, 2, },
+	{ { DEFACCEL, "SWS/BR: Normalize loudness of selected tracks to 0 LU" },            "BR_NORMALIZE_LOUDNESS_TRACKS_LU", NormalizeLoudness,          NULL, -2, },
+
+	{ { DEFACCEL, "SWS/BR/NF: Toggle use high precision mode for loudness analyzing" }, "BR_NF_TOGGLE_LOUDNESS_HIGH_PREC", ToggleHighPrecisionOption,  NULL, 0, IsHighPrecisionOptionEnabled},
 
 	/******************************************************************************
 	* MIDI editor - Item preview                                                  *
@@ -844,6 +847,7 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS/BR: Save edit cursor position, slot 14" },                                                                                          "BR_SAVE_CURSOR_POS_SLOT_14",              SaveCursorPosSlot, NULL, 13},
 	{ { DEFACCEL, "SWS/BR: Save edit cursor position, slot 15" },                                                                                          "BR_SAVE_CURSOR_POS_SLOT_15",              SaveCursorPosSlot, NULL, 14},
 	{ { DEFACCEL, "SWS/BR: Save edit cursor position, slot 16" },                                                                                          "BR_SAVE_CURSOR_POS_SLOT_16",              SaveCursorPosSlot, NULL, 15},
+
 	{ { DEFACCEL, "SWS/BR: Restore edit cursor position, slot 01" },                                                                                       "BR_RESTORE_CURSOR_POS_SLOT_1",            RestoreCursorPosSlot, NULL, 0},
 	{ { DEFACCEL, "SWS/BR: Restore edit cursor position, slot 02" },                                                                                       "BR_RESTORE_CURSOR_POS_SLOT_2",            RestoreCursorPosSlot, NULL, 1},
 	{ { DEFACCEL, "SWS/BR: Restore edit cursor position, slot 03" },                                                                                       "BR_RESTORE_CURSOR_POS_SLOT_3",            RestoreCursorPosSlot, NULL, 2},
@@ -861,22 +865,23 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS/BR: Restore edit cursor position, slot 15" },                                                                                       "BR_RESTORE_CURSOR_POS_SLOT_15",           RestoreCursorPosSlot, NULL, 14},
 	{ { DEFACCEL, "SWS/BR: Restore edit cursor position, slot 16" },                                                                                       "BR_RESTORE_CURSOR_POS_SLOT_16",           RestoreCursorPosSlot, NULL, 15},
 
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 01" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_1",      SaveItemMuteStateSlot, NULL, 0},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 02" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_2",      SaveItemMuteStateSlot, NULL, 1},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 03" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_3",      SaveItemMuteStateSlot, NULL, 2},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 04" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_4",      SaveItemMuteStateSlot, NULL, 3},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 05" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_5",      SaveItemMuteStateSlot, NULL, 4},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 06" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_6",      SaveItemMuteStateSlot, NULL, 5},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 07" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_7",      SaveItemMuteStateSlot, NULL, 6},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 08" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_8",      SaveItemMuteStateSlot, NULL, 7},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 09" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_9",      SaveItemMuteStateSlot, NULL, 8},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 10" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_10",     SaveItemMuteStateSlot, NULL, 9},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 11" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_11",     SaveItemMuteStateSlot, NULL, 10},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 12" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_12",     SaveItemMuteStateSlot, NULL, 11},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 13" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_13",     SaveItemMuteStateSlot, NULL, 12},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 14" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_14",     SaveItemMuteStateSlot, NULL, 13},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 15" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_15",     SaveItemMuteStateSlot, NULL, 14},
-	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 16" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_16",     SaveItemMuteStateSlot, NULL, 15},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 01" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_1",      SaveItemMuteStateSlot, NULL, 1},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 02" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_2",      SaveItemMuteStateSlot, NULL, 2},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 03" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_3",      SaveItemMuteStateSlot, NULL, 3},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 04" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_4",      SaveItemMuteStateSlot, NULL, 4},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 05" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_5",      SaveItemMuteStateSlot, NULL, 5},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 06" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_6",      SaveItemMuteStateSlot, NULL, 6},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 07" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_7",      SaveItemMuteStateSlot, NULL, 7},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 08" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_8",      SaveItemMuteStateSlot, NULL, 8},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 09" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_9",      SaveItemMuteStateSlot, NULL, 9},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 10" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_10",     SaveItemMuteStateSlot, NULL, 10},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 11" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_11",     SaveItemMuteStateSlot, NULL, 11},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 12" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_12",     SaveItemMuteStateSlot, NULL, 12},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 13" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_13",     SaveItemMuteStateSlot, NULL, 13},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 14" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_14",     SaveItemMuteStateSlot, NULL, 14},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 15" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_15",     SaveItemMuteStateSlot, NULL, 15},
+	{ { DEFACCEL, "SWS/BR: Save selected items' mute state, slot 16" },                                                                                    "BR_SAVE_SOLO_MUTE_SEL_ITEMS_SLOT_16",     SaveItemMuteStateSlot, NULL, 16},
+
 	{ { DEFACCEL, "SWS/BR: Save all items' mute state, slot 01" },                                                                                         "BR_SAVE_SOLO_MUTE_ALL_ITEMS_SLOT_1",      SaveItemMuteStateSlot, NULL, -1},
 	{ { DEFACCEL, "SWS/BR: Save all items' mute state, slot 02" },                                                                                         "BR_SAVE_SOLO_MUTE_ALL_ITEMS_SLOT_2",      SaveItemMuteStateSlot, NULL, -2},
 	{ { DEFACCEL, "SWS/BR: Save all items' mute state, slot 03" },                                                                                         "BR_SAVE_SOLO_MUTE_ALL_ITEMS_SLOT_3",      SaveItemMuteStateSlot, NULL, -3},
@@ -893,6 +898,7 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS/BR: Save all items' mute state, slot 14" },                                                                                         "BR_SAVE_SOLO_MUTE_ALL_ITEMS_SLOT_14",     SaveItemMuteStateSlot, NULL, -14},
 	{ { DEFACCEL, "SWS/BR: Save all items' mute state, slot 15" },                                                                                         "BR_SAVE_SOLO_MUTE_ALL_ITEMS_SLOT_15",     SaveItemMuteStateSlot, NULL, -15},
 	{ { DEFACCEL, "SWS/BR: Save all items' mute state, slot 16" },                                                                                         "BR_SAVE_SOLO_MUTE_ALL_ITEMS_SLOT_16",     SaveItemMuteStateSlot, NULL, -16},
+
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to selected items, slot 01" },                                                                        "BR_RESTORE_SOLO_MUTE_SEL_ITEMS_SLOT_1",   RestoreItemMuteStateSlot, NULL, 1},
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to selected items, slot 02" },                                                                        "BR_RESTORE_SOLO_MUTE_SEL_ITEMS_SLOT_2",   RestoreItemMuteStateSlot, NULL, 2},
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to selected items, slot 03" },                                                                        "BR_RESTORE_SOLO_MUTE_SEL_ITEMS_SLOT_3",   RestoreItemMuteStateSlot, NULL, 3},
@@ -909,6 +915,7 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to selected items, slot 14" },                                                                        "BR_RESTORE_SOLO_MUTE_SEL_ITEMS_SLOT_14",  RestoreItemMuteStateSlot, NULL, 14},
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to selected items, slot 15" },                                                                        "BR_RESTORE_SOLO_MUTE_SEL_ITEMS_SLOT_15",  RestoreItemMuteStateSlot, NULL, 15},
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to selected items, slot 16" },                                                                        "BR_RESTORE_SOLO_MUTE_SEL_ITEMS_SLOT_16",  RestoreItemMuteStateSlot, NULL, 16},
+
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to all items, slot 01" },                                                                             "BR_RESTORE_SOLO_MUTE_ALL_ITEMS_SLOT_1",   RestoreItemMuteStateSlot, NULL, -1},
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to all items, slot 02" },                                                                             "BR_RESTORE_SOLO_MUTE_ALL_ITEMS_SLOT_2",   RestoreItemMuteStateSlot, NULL, -2},
 	{ { DEFACCEL, "SWS/BR: Restore items' mute state to all items, slot 03" },                                                                             "BR_RESTORE_SOLO_MUTE_ALL_ITEMS_SLOT_3",   RestoreItemMuteStateSlot, NULL, -3},
@@ -942,6 +949,7 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS/BR: Save selected tracks' solo and mute state, slot 14" },                                                                          "BR_SAVE_SOLO_MUTE_SEL_TRACKS_SLOT_14",    SaveTrackSoloMuteStateSlot, NULL, 14},
 	{ { DEFACCEL, "SWS/BR: Save selected tracks' solo and mute state, slot 15" },                                                                          "BR_SAVE_SOLO_MUTE_SEL_TRACKS_SLOT_15",    SaveTrackSoloMuteStateSlot, NULL, 15},
 	{ { DEFACCEL, "SWS/BR: Save selected tracks' solo and mute state, slot 16" },                                                                          "BR_SAVE_SOLO_MUTE_SEL_TRACKS_SLOT_16",    SaveTrackSoloMuteStateSlot, NULL, 16},
+
 	{ { DEFACCEL, "SWS/BR: Save all tracks' solo and mute state, slot 01" },                                                                               "BR_SAVE_SOLO_MUTE_ALL_TRACKS_SLOT_1",     SaveTrackSoloMuteStateSlot, NULL, -1},
 	{ { DEFACCEL, "SWS/BR: Save all tracks' solo and mute state, slot 02" },                                                                               "BR_SAVE_SOLO_MUTE_ALL_TRACKS_SLOT_2",     SaveTrackSoloMuteStateSlot, NULL, -2},
 	{ { DEFACCEL, "SWS/BR: Save all tracks' solo and mute state, slot 03" },                                                                               "BR_SAVE_SOLO_MUTE_ALL_TRACKS_SLOT_3",     SaveTrackSoloMuteStateSlot, NULL, -3},
@@ -958,6 +966,7 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS/BR: Save all tracks' solo and mute state, slot 14" },                                                                               "BR_SAVE_SOLO_MUTE_ALL_TRACKS_SLOT_14",    SaveTrackSoloMuteStateSlot, NULL, -14},
 	{ { DEFACCEL, "SWS/BR: Save all tracks' solo and mute state, slot 15" },                                                                               "BR_SAVE_SOLO_MUTE_ALL_TRACKS_SLOT_15",    SaveTrackSoloMuteStateSlot, NULL, -15},
 	{ { DEFACCEL, "SWS/BR: Save all tracks' solo and mute state, slot 16" },                                                                               "BR_SAVE_SOLO_MUTE_ALL_TRACKS_SLOT_16",    SaveTrackSoloMuteStateSlot, NULL, -16},
+
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to selected tracks, slot 01" },                                                             "BR_RESTORE_SOLO_MUTE_SEL_TRACKS_SLOT_1",  RestoreTrackSoloMuteStateSlot, NULL, 1},
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to selected tracks, slot 02" },                                                             "BR_RESTORE_SOLO_MUTE_SEL_TRACKS_SLOT_2",  RestoreTrackSoloMuteStateSlot, NULL, 2},
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to selected tracks, slot 03" },                                                             "BR_RESTORE_SOLO_MUTE_SEL_TRACKS_SLOT_3",  RestoreTrackSoloMuteStateSlot, NULL, 3},
@@ -974,6 +983,7 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to selected tracks, slot 14" },                                                             "BR_RESTORE_SOLO_MUTE_SEL_TRACKS_SLOT_14", RestoreTrackSoloMuteStateSlot, NULL, 14},
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to selected tracks, slot 15" },                                                             "BR_RESTORE_SOLO_MUTE_SEL_TRACKS_SLOT_15", RestoreTrackSoloMuteStateSlot, NULL, 15},
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to selected tracks, slot 16" },                                                             "BR_RESTORE_SOLO_MUTE_SEL_TRACKS_SLOT_16", RestoreTrackSoloMuteStateSlot, NULL, 16},
+
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to all tracks, slot 01" },                                                                  "BR_RESTORE_SOLO_MUTE_ALL_TRACKS_SLOT_1",  RestoreTrackSoloMuteStateSlot, NULL, -1},
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to all tracks, slot 02" },                                                                  "BR_RESTORE_SOLO_MUTE_ALL_TRACKS_SLOT_2",  RestoreTrackSoloMuteStateSlot, NULL, -2},
 	{ { DEFACCEL, "SWS/BR: Restore tracks' solo and mute state to all tracks, slot 03" },                                                                  "BR_RESTORE_SOLO_MUTE_ALL_TRACKS_SLOT_3",  RestoreTrackSoloMuteStateSlot, NULL, -3},
@@ -1241,7 +1251,7 @@ void BR_Exit ()
 {
 	// Load various global variables
 	char tmp[512];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", IsSetAutoStretchMarkersOn(NULL));
+	snprintf(tmp, sizeof(tmp), "%d", IsSetAutoStretchMarkersOn(NULL));
 	WritePrivateProfileString("common", "autoStretchMarkersTempo", tmp, GetIniFileBR());
 
 	// Run various exit functions

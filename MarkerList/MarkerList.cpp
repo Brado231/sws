@@ -28,7 +28,7 @@
 #include "stdafx.h"
 #include "../reaper/localize.h"
 #include "../SnM/SnM_Dlg.h"
-#include "../../WDL/projectcontext.h"
+#include "WDL/projectcontext.h"
 #include "MarkerListClass.h"
 #include "MarkerList.h"
 #include "MarkerListActions.h"
@@ -42,7 +42,7 @@
 #define FIRST_LOAD_MSG	0x10100
 
 // Globals
-static SWSProjConfig<WDL_PtrList_DeleteOnDestroy<MarkerList> > g_savedLists;
+static SWSProjConfig<WDL_PtrList_DOD<MarkerList> > g_savedLists;
 MarkerList* g_curList = NULL;
 SWS_MarkerListWnd* g_pMarkerList = NULL;
 
@@ -66,19 +66,19 @@ void SWS_MarkerListView::GetItemText(SWS_ListItem* item, int iCol, char* str, in
 			format_timestr_pos(mi->GetPos(), str, iStrMax, -1);
 			break;
 		case 1:
-			_snprintf(str, iStrMax, "%s", mi->IsRegion() ? __LOCALIZE("Region","sws_DLG_102") : __LOCALIZE("Marker","sws_DLG_102"));
+			snprintf(str, iStrMax, "%s", mi->IsRegion() ? __LOCALIZE("Region","sws_DLG_102") : __LOCALIZE("Marker","sws_DLG_102"));
 			break;
 		case 2:
-			_snprintf(str, iStrMax, "%d", mi->GetNum());
+			snprintf(str, iStrMax, "%d", mi->GetNum());
 			break;
 		case 3:
 			lstrcpyn(str, mi->GetName(), iStrMax);
 			break;
 		case 4:
 #ifdef _WIN32
-			_snprintf(str, iStrMax, "0x%02x%02x%02x", mi->GetColor() & 0xFF, (mi->GetColor() >> 8) & 0xFF, (mi->GetColor() >> 16) & 0xFF);
+			snprintf(str, iStrMax, "0x%02x%02x%02x", mi->GetColor() & 0xFF, (mi->GetColor() >> 8) & 0xFF, (mi->GetColor() >> 16) & 0xFF);
 #else
-			_snprintf(str, iStrMax, "0x%06x", mi->GetColor());
+			snprintf(str, iStrMax, "0x%06x", mi->GetColor());
 #endif
 			break;
 		}
@@ -224,9 +224,9 @@ void SWS_MarkerListWnd::Update(bool bForce)
 	// Change the time string if the project time mode changes
 	static int prevTimeMode = -1;
 	bool bChanged = bForce;
-	if (*(int*)GetConfigVar("projtimemode") != prevTimeMode)
+	if (*ConfigVar<int>("projtimemode") != prevTimeMode)
 	{
-		prevTimeMode = *(int*)GetConfigVar("projtimemode");
+		prevTimeMode = *ConfigVar<int>("projtimemode");
 		bChanged = true;
 	}
 
@@ -359,7 +359,7 @@ HMENU SWS_MarkerListWnd::OnContextMenu(int x, int y, bool* wantDefaultItems)
 	char str[256];
 	for (int i = 0; i < g_savedLists.Get()->GetSize(); i++)
 	{
-		sprintf(str, __LOCALIZE_VERFMT("Load %s","sws_DLG_102"), g_savedLists.Get()->Get(i)->m_name);
+		snprintf(str, sizeof(str), __LOCALIZE_VERFMT("Load %s","sws_DLG_102"), g_savedLists.Get()->Get(i)->m_name);
 		AddToMenu(hMenu, str, FIRST_LOAD_MSG+i);
 	}
 
@@ -404,8 +404,19 @@ int SWS_MarkerListWnd::OnKey(MSG* msg, int iKeyState)
 	{
 		if (msg->wParam == VK_DELETE)
 		{
-			OnCommand(DELETE_MSG, 0);
-			return 1;
+			// #1119, don't block Del key in Filter textbox
+			HWND h = GetDlgItem(m_hwnd, IDC_FILTER);
+#ifdef _WIN32
+			if (msg->hwnd == h)
+#else
+			if (GetFocus() == h)
+#endif
+				return 0;
+			else
+			{ 
+				OnCommand(DELETE_MSG, 0);
+				return 1;
+			}
 		}
 		else if (msg->wParam == VK_RETURN)
 		{

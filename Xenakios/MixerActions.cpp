@@ -464,7 +464,7 @@ WDL_DLGRET RenameTraxDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPar
 			EnableWindow(GetDlgItem(hwnd, IDC_CHECK1), g_MultipleSelected);
 			CheckDlgButton(hwnd, IDC_CHECK1, g_RenaTraxDialogSetAutorename ? BST_CHECKED : BST_UNCHECKED);
 			char buf[500];
-			sprintf(buf,__LOCALIZE_VERFMT("Rename track %d / %d","sws_DLG_139"),g_RenaCurTrack,g_RenaSelTrax);
+			snprintf(buf,sizeof(buf),__LOCALIZE_VERFMT("Rename track %d / %d","sws_DLG_139"),g_RenaCurTrack,g_RenaSelTrax);
 			SetWindowText(hwnd,buf);
 			break;
 		}
@@ -534,7 +534,7 @@ void DoRenameTracksDlg(COMMAND_T* ct)
 		for (i=0;i<(int)VecSelTracks.size();i++)
 		{
 			//
-			char argh[10];
+			char argh[13];
 			sprintf(argh,"-%.2d",i+1);
 			AutogenName.assign(g_NewTrackName);
 			AutogenName.append(argh);
@@ -674,13 +674,8 @@ void DoMaxMixFxPanHeight(COMMAND_T*)
 
 void DoRemoveTimeSelectionLeaveLoop(COMMAND_T*)
 {
-	int sz=0; int *locklooptotime = (int *)get_config_var("locklooptotime",&sz);
-    int OldLockLoopToTime=*locklooptotime;
-	if (sz==sizeof(int) && locklooptotime) 
-	{ 
-		int newLockLooptotime=0;
-		*locklooptotime=newLockLooptotime; /* update reaper's copy */
-	}
+	ConfigVarOverride<int> locklooptotime("locklooptotime", 0);
+
 	double a=0.0;
 	double b=0.0;
 	GetSet_LoopTimeRange(false, true, &a,&b,false); // get current loop
@@ -688,7 +683,6 @@ void DoRemoveTimeSelectionLeaveLoop(COMMAND_T*)
 	double d=0;
 	GetSet_LoopTimeRange(true, false, &c,&d,false); // set time sel to 0 and 0
 	GetSet_LoopTimeRange(true, true, &a,&b,false); // restore loop
-	*locklooptotime=OldLockLoopToTime;
 }
 
 int g_CurTrackHeightIdx=0;
@@ -872,10 +866,9 @@ void DoRenderReceivesAsStems(COMMAND_T*)
 
 void DoSetRenderSpeedToRealtime2(COMMAND_T*)
 {
-	int sz=0; int *renderspeedmode = (int *)get_config_var("workrender",&sz);
-    if (sz==sizeof(int) && renderspeedmode) 
+	if (ConfigVar<int> renderspeedmode = "workrender")
 	{ 
-		bitset<32> blah(*renderspeedmode);	
+		bitset<32> blah(*renderspeedmode);
 		blah.set(3);
 		*renderspeedmode=blah.to_ulong();
 	}
@@ -885,10 +878,9 @@ void DoSetRenderSpeedToRealtime2(COMMAND_T*)
 
 void DoSetRenderSpeedToNonLim(COMMAND_T*)
 {
-	int sz=0; int *renderspeedmode = (int *)get_config_var("workrender",&sz);
-    if (sz==sizeof(int) && renderspeedmode) 
+	if (ConfigVar<int> renderspeedmode = "workrender")
 	{ 
-		bitset<32> blah(*renderspeedmode);	
+		bitset<32> blah(*renderspeedmode);
 		blah.reset(3);
 		*renderspeedmode=blah.to_ulong();
 	}
@@ -900,8 +892,7 @@ int g_renderspeed=-1;
 
 void DoStoreRenderSpeed(COMMAND_T*)
 {
-	int sz=0; int *renderspeedmode = (int *)get_config_var("workrender",&sz);
-    if (sz==sizeof(int) && renderspeedmode) 
+	if (const ConfigVar<int> renderspeedmode = "workrender")
 	{ 
 		g_renderspeed=*renderspeedmode;
 	}
@@ -911,8 +902,7 @@ void DoStoreRenderSpeed(COMMAND_T*)
 
 void DoRecallRenderSpeed(COMMAND_T*)
 {
-	int sz=0; int *renderspeedmode = (int *)get_config_var("workrender",&sz);
-    if (sz==sizeof(int) && renderspeedmode) 
+	if (ConfigVar<int> renderspeedmode = "workrender")
 	{ 
 		if (g_renderspeed>=0)
 			*renderspeedmode=g_renderspeed;
@@ -932,7 +922,7 @@ typedef struct
 MediaTrack* g_ReferenceTrack=0;
 bool g_ReferenceTrackSolo=false;
 double g_RefMasterVolume=1.0;
-GUID g_RefTrackGUID={ -1, }; // Set to invalid GUID
+GUID g_RefTrackGUID={}; // Set to invalid GUID
 vector<t_track_solostate> g_RefTrackSolostates;
 
 void DoSetSelTrackAsRefTrack(COMMAND_T*)
@@ -993,7 +983,6 @@ int IsRefTrack(COMMAND_T*) { return g_ReferenceTrackSolo; }
 void DoToggleReferenceTrack(COMMAND_T*)
 {
 	int isolo;
-	int ifxen;
 	bool bmute;
 	MediaTrack* reftk=0;
 	if (!g_ReferenceTrackSolo)
@@ -1009,10 +998,8 @@ void DoToggleReferenceTrack(COMMAND_T*)
 			GetSetMediaTrackInfo(reftk,"B_MUTE",&bmute);
 			GetSetMediaTrackInfo(reftk,"I_SOLO",&isolo);
 			MediaTrack* mtk=CSurf_TrackFromID(0,false);
-			ifxen=0;
 			if (mtk)
 			{
-				//GetSetMediaTrackInfo(mtk,"I_FXEN",&ifxen);
 				g_RefMasterVolume=*(double*)GetSetMediaTrackInfo(mtk,"D_VOL",0);
 				double mvol=1.0;
 				GetSetMediaTrackInfo(mtk,"D_VOL",&mvol);
@@ -1033,10 +1020,8 @@ void DoToggleReferenceTrack(COMMAND_T*)
 			GetSetMediaTrackInfo(reftk,"B_MUTE",&bmute);
 			GetSetMediaTrackInfo(reftk,"I_SOLO",&isolo);
 			MediaTrack* mtk=CSurf_TrackFromID(0,false);
-			ifxen=1;
 			if (mtk)
 			{
-				//GetSetMediaTrackInfo(mtk,"I_FXEN",&ifxen);	
 				GetSetMediaTrackInfo(mtk,"D_VOL",&g_RefMasterVolume);
 			}
 		} 

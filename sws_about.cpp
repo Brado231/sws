@@ -1,7 +1,7 @@
 /******************************************************************************
 / sws_about.cpp
 /
-/ Copyright (c) 2013 Tim Payne (SWS), Jeffos
+/ Copyright (c) 2013 and later Tim Payne (SWS), Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -26,25 +26,17 @@
 ******************************************************************************/
 
 #include "stdafx.h"
-#include "./reaper/localize.h"
-#include "./SnM/SnM_Dlg.h"
-#include "./SnM/SnM_Util.h"
-#include "./Breeder/BR_Update.h"
+#include "reaper/localize.h"
+#include "SnM/SnM_Dlg.h"
+#include "SnM/SnM_Util.h"
+#include "Breeder/BR_Update.h"
 #include "version.h"
 #include "license.h"
+#include "url.h"
 #include "Prompt.h"
 
 
-#define WHATSNEW_HTM			"%ssws_whatsnew.html"
-#ifdef _WIN32
-#define WHATSNEW_TXT			"%s\\Plugins\\reaper_sws_whatsnew.txt"
-#else
-#define WHATSNEW_TXT			"%s/UserPlugins/reaper_sws_whatsnew.txt" // deprecated, not deployed on OSX anymore
-#endif
-
-
 static HWND s_hwndAbout = NULL;
-
 
 bool IsOfficialVersion()
 {
@@ -53,49 +45,7 @@ bool IsOfficialVersion()
 
 void WhatsNew(COMMAND_T*)
 {
-	WDL_FastString fnIn;
-	fnIn.SetFormatted(BUFFER_SIZE, WHATSNEW_TXT, 
-#ifdef _WIN32
-		GetExePath());
-#else
-		GetResourcePath());
-#endif
-
-#ifndef _WIN32 // reaper_sws_whatsnew.txt not deployed on OSX anymore, replaced with online help
-	if (FileOrDirExistsErrMsg(fnIn.Get(), false))
-	{
-		SNM_DeleteFile(fnIn.Get(), false); // lazy cleanup
-	}
-
-	if (!IsOfficialVersion())
-	{
-		WDL_FastString url;
-		url.SetFormatted(512, SWS_URL_BETA_WHATSNEW, SWS_VERSION);
-		ShellExecute(GetMainHwnd(), "open", url.Get(), NULL, NULL, SW_SHOWNORMAL);
-	}
-	else
-	{
-		ShellExecute(GetMainHwnd(), "open", SWS_URL_WHATSNEW, NULL, NULL, SW_SHOWNORMAL);
-	}
-#else
-	if (FileOrDirExistsErrMsg(fnIn.Get()))
-	{
-		WDL_FastString fnOut;
-		char tmpDir[BUFFER_SIZE] = "";
-		GetTempPath(sizeof(tmpDir), tmpDir);
-		fnOut.SetFormatted(BUFFER_SIZE, WHATSNEW_HTM, tmpDir);
-
-		if (!GenHtmlWhatsNew(fnIn.Get(), fnOut.Get(), true, SWS_URL))
-		{
-			ShellExecute(GetMainHwnd(), "open", fnOut.Get(), NULL, NULL, SW_SHOWNORMAL);
-		}
-		else
-		{
-			MessageBox(GetMainHwnd(), __LOCALIZE("The generation of the \"What's new?\" HTML page has failed!\nOpening a raw text file instead...","sws_DLG_109"), __LOCALIZE("SWS - Warning","sws_DLG_109"), MB_OK);
-			ShellExecute(GetMainHwnd(), "open", fnIn.Get(), NULL, NULL, SW_SHOWNORMAL);
-		}
-	}
-#endif
+	ShellExecute(GetMainHwnd(), "open", IsOfficialVersion() ? SWS_URL_WHATSNEW : SWS_URL_BETA_WHATSNEW, NULL, NULL, SW_SHOWNORMAL);
 }
 
 INT_PTR WINAPI doAbout(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -108,16 +58,26 @@ INT_PTR WINAPI doAbout(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case WM_INITDIALOG:
 		{
 			char cVersion[256];
-			_snprintfSafe(cVersion, sizeof(cVersion), "%s %d.%d.%d #%d", __LOCALIZE("Version","sws_DLG_109"), SWS_VERSION);
+			snprintf(cVersion, sizeof(cVersion),
+#ifdef GIT_BRANCH
+					"%s %d.%d.%d.%d %s (%s)",
+#else
+					"%s %d.%d.%d.%d %s",
+#endif
+				__LOCALIZE("Version","sws_DLG_109"), SWS_VERSION, GIT_COMMIT
+#ifdef GIT_BRANCH
+				, GIT_BRANCH
+#endif
+			);
 			char *p=strstr(cVersion, " #0");
 			if (p) *p=0;
 
 			char cVersionDate[256];
-			_snprintfSafe(cVersionDate, sizeof(cVersionDate), __LOCALIZE_VERFMT("%s built on %s","sws_DLG_109"), cVersion, __DATE__);
+			snprintf(cVersionDate, sizeof(cVersionDate), __LOCALIZE_VERFMT("%s built on %s","sws_DLG_109"), cVersion, __DATE__);
 
 			SetWindowText(GetDlgItem(hwndDlg, IDC_VERSION), cVersionDate);
 			SetWindowText(GetDlgItem(hwndDlg, IDC_WEBSITE), SWS_URL);
-			SetWindowText(GetDlgItem(hwndDlg, IDC_EDIT), LICENSE_TEXT);
+			SetWindowText(GetDlgItem(hwndDlg, IDC_EDIT), LICENSE_AUTHORS "\r\n" LICENSE_TEXT);
 			bool official, beta; GetStartupSearchOptions(&official, &beta, NULL);
 			CheckDlgButton(hwndDlg, IDC_CHECK1, official);
 			CheckDlgButton(hwndDlg, IDC_CHECK2, beta);
@@ -186,7 +146,7 @@ int IsAboutBoxOpen(COMMAND_T*) {
 //!WANT_LOCALIZE_1ST_STRING_BEGIN:sws_actions
 static COMMAND_T g_commandTable[] = 
 {
-	{ { DEFACCEL, "SWS: About" }, "SWS_ABOUT", OpenAboutBox, "About SWS Extensions", NULL, IsAboutBoxOpen, },
+	{ { DEFACCEL, "SWS: About" }, "SWS_ABOUT", OpenAboutBox, "About SWS Extensions", 0, IsAboutBoxOpen, },
 	{ { DEFACCEL, "SWS/S&M: What's new..." }, "S&M_WHATSNEW", WhatsNew, },
 	{ { DEFACCEL, "SWS/BR: Check for new SWS version..." }, "BR_VERSION_CHECK", VersionCheckAction, },
 	{ {}, LAST_COMMAND, }, // Denote end of table

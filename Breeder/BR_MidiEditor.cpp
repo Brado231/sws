@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -146,7 +146,7 @@ static void MidiTakePreview (int mode, MediaItem_Take* take, MediaTrack* track, 
 			itemStart = GetMediaItemInfo_Value(item, "D_POSITION");
 			itemEnd   = itemStart + GetMediaItemInfo_Value(item, "D_LENGTH");
 			takeOffset = GetMediaItemTakeInfo_Value(take, "D_STARTOFFS");
-			double sourceLenPPQ = GetMidiSourceLengthPPQ(take, NULL);
+			double sourceLenPPQ = GetMidiSourceLengthPPQ(take, false);
 
 			if (takeOffset != 0)
 				SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", 0);
@@ -191,9 +191,9 @@ static void MidiTakePreview (int mode, MediaItem_Take* take, MediaTrack* track, 
 				OnPauseButton();
 
 			if (g_ItemPreview.preview_track)
-				g_itemPreviewPlaying = !!PlayTrackPreview2Ex(NULL, &g_ItemPreview, (measureSync) ? (1) : (0), measureSync);
+				g_itemPreviewPlaying = !!PlayTrackPreview2Ex(NULL, &g_ItemPreview, !!measureSync, measureSync);
 			else
-				g_itemPreviewPlaying = !!PlayPreviewEx(&g_ItemPreview, (measureSync) ? (1) : (0), measureSync);
+				g_itemPreviewPlaying = !!PlayPreviewEx(&g_ItemPreview, !!measureSync, measureSync);
 
 			if (g_itemPreviewPlaying)
 			{
@@ -431,7 +431,7 @@ void ME_CreateCCLaneLastClicked (COMMAND_T* ct, int val, int valhw, int relmode,
 					while (i <= SNM_MAX_CC_LANE_ID && lanes[i])
 						i++;
 					char newLane[SNM_MAX_CHUNK_LINE_LENGTH] = "";
-					if (_snprintfStrict(newLane, sizeof(newLane), "VELLANE %d 50 0\n", i) > 0)
+					if (snprintfStrict(newLane, sizeof(newLane), "VELLANE %d 50 0\n", i) > 0)
 						ptk.GetChunk()->Insert(newLane, tkFirstPos);
 
 					updated = p.ReplaceTake(tkPos, tklen, ptk.GetChunk());
@@ -755,7 +755,7 @@ void ME_HideCCLanes (COMMAND_T* ct, int val, int valhw, int relmode, HWND hwnd)
 					if (firstPos && laneCount == 0)
 					{
 						char newLane[512] = "";
-						if (_snprintfSafe(newLane, sizeof(newLane), "VELLANE -1 0 0\n"))
+						if (snprintf(newLane, sizeof(newLane), "VELLANE -1 0 0\n"))
 							ptk.GetChunk()->Insert(newLane, firstPos);
 					}
 
@@ -1031,7 +1031,7 @@ void ME_EnvPointsToCC (COMMAND_T* ct, int val, int valhw, int relmode, HWND hwnd
 				bool beatsTimebase = (midiEditor.GetTimebase() == PROJECT_BEATS || midiEditor.GetTimebase() == SOURCE_BEATS);
 
 				double stepSize = 0;
-				int midiCcDensity; GetConfig("midiccdensity", midiCcDensity);
+				const int midiCcDensity = ConfigVar<int>("midiccdensity").value_or(0);
 				if (midiCcDensity > 0)
 				{
 					stepSize = (double)midiEditor.GetPPQ() / (double)midiCcDensity;

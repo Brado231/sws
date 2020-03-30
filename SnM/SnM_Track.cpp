@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Track.cpp
 /
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -31,7 +31,8 @@
 #include "SnM_Routing.h"
 #include "SnM_Track.h"
 #include "SnM_Util.h"
-#include "../../WDL/projectcontext.h"
+#include "WDL/projectcontext.h"
+#include "../reaper/localize.h"
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,7 +102,9 @@ void SNM_GetSelectedTracks(ReaProject* _proj, WDL_PtrList<MediaTrack>* _trs, boo
 bool SNM_SetSelectedTracks(ReaProject* _proj, WDL_PtrList<MediaTrack>* _trs, bool _unselOthers, bool _withMaster)
 {
 	bool updated = false;
-	int count = CountTracks(_proj);
+	const int count = CountTracks(_proj);
+
+	PreventUIRefresh(1);
 	for (int i=_withMaster?0:1; i <= count; i++)
 	{
 		if (MediaTrack* tr = SNM_GetTrack(_proj, i))
@@ -120,10 +123,12 @@ bool SNM_SetSelectedTracks(ReaProject* _proj, WDL_PtrList<MediaTrack>* _trs, boo
 			}
 		}
 	}
+	PreventUIRefresh(-1);
+
 	return updated;
 }
 
-// wrapper func.. 
+// wrapper func
 // note: _tr=NULL + _unselOthers=true will unselect all tracks
 bool SNM_SetSelectedTrack(ReaProject* _proj, MediaTrack* _tr, bool _unselOthers, bool _withMaster)
 {
@@ -133,10 +138,15 @@ bool SNM_SetSelectedTrack(ReaProject* _proj, MediaTrack* _tr, bool _unselOthers,
 }
 
 
-void SNM_ClearSelectedTracks(ReaProject* _proj, bool _withMaster) {
-	int count = CountTracks(_proj);
+void SNM_ClearSelectedTracks(ReaProject* _proj, bool _withMaster)
+{
+	const int count = CountTracks(_proj);
+	PreventUIRefresh(1);
 	for (int i=_withMaster?0:1; i <= count; i++)
-		GetSetMediaTrackInfo(SNM_GetTrack(_proj, i), "I_SELECTED", &g_i0);
+		if (MediaTrack* tr = SNM_GetTrack(_proj, i))
+			if (*(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL))
+				GetSetMediaTrackInfo(tr, "I_SELECTED", &g_i0);
+	PreventUIRefresh(-1);
 }
 
 
@@ -324,13 +334,13 @@ int SNM_GetTrackDepth(MediaTrack* _tr)
 }
 
 
-WDL_PtrList_DeleteOnDestroy<SNM_TrackInt> g_trackFolderStates;
-WDL_PtrList_DeleteOnDestroy<SNM_TrackInt> g_trackFolderCompactStates;
+WDL_PtrList_DOD<SNM_TrackInt> g_trackFolderStates;
+WDL_PtrList_DOD<SNM_TrackInt> g_trackFolderCompactStates;
 
 void SaveTracksFolderStates(COMMAND_T* _ct)
 {
 	const char* strState = !_ct->user ? "I_FOLDERDEPTH" : "I_FOLDERCOMPACT";
-	WDL_PtrList_DeleteOnDestroy<SNM_TrackInt>* saveList = !_ct->user ? &g_trackFolderStates : &g_trackFolderCompactStates;
+	WDL_PtrList_DOD<SNM_TrackInt>* saveList = !_ct->user ? &g_trackFolderStates : &g_trackFolderCompactStates;
 	saveList->Empty(true);
 	for (int i=1; i <= GetNumTracks(); i++) // skip master
 	{
@@ -344,7 +354,7 @@ void RestoreTracksFolderStates(COMMAND_T* _ct)
 {
 	bool updated = false;
 	const char* strState = !_ct->user ? "I_FOLDERDEPTH" : "I_FOLDERCOMPACT";
-	WDL_PtrList_DeleteOnDestroy<SNM_TrackInt>* saveList = !_ct->user ? &g_trackFolderStates : &g_trackFolderCompactStates;
+	WDL_PtrList_DOD<SNM_TrackInt>* saveList = !_ct->user ? &g_trackFolderStates : &g_trackFolderCompactStates;
 	for (int i=1; i <= GetNumTracks(); i++) // skip master
 	{
 		MediaTrack* tr = CSurf_TrackFromID(i, false);
@@ -444,7 +454,8 @@ static const char s_trackEnvNames[][SNM_MAX_ENV_CHUNKNAME_LEN] =
 	"PROGRAMENV",
 	// ^^ keep these as first items, see LookupTrackEnvName()
 
-	"VOLENV2",
+	"VOLENV2", // Volume
+	"VOLENV3", // Trim volume
 	"PANENV2",
 	"WIDTHENV2",
 	"VOLENV",
@@ -454,6 +465,9 @@ static const char s_trackEnvNames[][SNM_MAX_ENV_CHUNKNAME_LEN] =
 	"AUXVOLENV",
 	"AUXPANENV",
 	"AUXMUTEENV",
+	"HWVOLENV",
+	"HWPANENV",
+	"HWMUTEENV",
 /*JFB useless: GetSetObjectState() removes them
 	"TEMPOENVEX",
 	"MASTERPLAYSPEEDENV",
@@ -565,6 +579,10 @@ void ToggleArmTrackEnv(COMMAND_T* _ct)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
 }
 
+// Veto: currently several issues (see #918):
+// 1. Doesn't remove send envs of selected tracks
+// 2. Removes send envs of all tracks which have sends to selected tracks
+// 3. Automation items of removed envs remain in project orphaned (on "Track level" (depth 1), see "<POOLEDENV")
 void RemoveAllEnvsSelTracks(COMMAND_T* _ct)
 {
 	bool updated = false;
@@ -573,17 +591,79 @@ void RemoveAllEnvsSelTracks(COMMAND_T* _ct)
 			if (tr && *(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL)) {
 				SNM_TrackEnvParserPatcher p(tr);
 				updated |= p.RemoveEnvelopes();
-		}
+			}
 	if (updated)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
 }
 
+void RemoveAllEnvsSelTracksNoChunk(COMMAND_T* _ct)
+{
+	// #1175
+	bool prompt = GetPrivateProfileInt("Misc", "RemoveAllEnvsSelTracksPrompt", 0, g_SNM_IniFn.Get()) ? true : false;
+	if (prompt && SNM_CountSelectedTracks(NULL, true)) 
+	{
+		int r = MessageBox(GetMainHwnd(),
+			__LOCALIZE("All envelopes for selected tracks will be removed.\nDo you want to continue?", "sws_DLG_155"),
+			__LOCALIZE("S&M - Question", "sws_DLG_155"),
+			MB_OKCANCEL);
+		if (r == IDCANCEL)
+			return;
+	}
+
+	bool updated = false;
+	TrackEnvelope *tempoEnv = NULL;
+
+	const int trackCount = GetNumTracks();
+	for (int ti = 0; ti <= trackCount; ti++) { // incl. master
+		MediaTrack *tr = CSurf_TrackFromID(ti, false);
+
+		if (!tr || *(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL) != 1)
+			continue;
+
+		if (!updated) {
+			PreventUIRefresh(1);
+			Undo_BeginBlock2(NULL);
+			Main_OnCommand(41148, 0); // required for env selection: Envelope: Show all envelopes for (selected) tracks.
+			updated = true;
+		}
+
+		if (ti == 0) // Master track
+			tempoEnv = GetTrackEnvelopeByName(tr, "Tempo map");
+
+		int envIndex = 0;
+		while (CountTrackEnvelopes(tr) > envIndex) {
+			TrackEnvelope* env = GetTrackEnvelope(tr, envIndex);
+
+			if (!env || env == tempoEnv) {
+				++envIndex;
+				continue;
+			}
+
+			if (CountAutomationItems && GetSetAutomationItemInfo) { // AI API optional for now
+				if(const int aiCount = CountAutomationItems(env)) {
+					for(int ai = 0; ai < aiCount; ai++)
+						GetSetAutomationItemInfo(env, ai, "D_UISEL", 1, true);
+					Main_OnCommand(42086, 0);  // Envelope: Delete (selected) automation items
+				}
+			}
+
+			SetCursorContext(2, env);   // Select envelope
+			DeleteEnvelopePointRange(env, -1000000000, 1000000000);  //  hack to not spawn a dialog on action 40065
+			Main_OnCommand(40065, 0);   // Envelope: Clear (selected) envelope
+		}
+	}
+
+	if (updated) {
+		PreventUIRefresh(-1);
+		Undo_EndBlock2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL);
+	}
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Toolbar track env. write mode toggle
 ///////////////////////////////////////////////////////////////////////////////
 
-WDL_PtrList_DeleteOnDestroy<SNM_TrackInt> g_toolbarAutoModeToggles;
+WDL_PtrList_DOD<SNM_TrackInt> g_toolbarAutoModeToggles;
 
 void ToggleWriteEnvExists(COMMAND_T* _ct)
 {
@@ -606,7 +686,7 @@ void ToggleWriteEnvExists(COMMAND_T* _ct)
 		{
 			MediaTrack* tr = CSurf_TrackFromID(i, false); 
 			int autoMode = tr ? *(int*)GetSetMediaTrackInfo(tr, "I_AUTOMODE", NULL) : -1;
-			if (autoMode >= 2 /* touch */ && autoMode <= 4 /* latch */)
+			if (autoMode >= 2 /* touch */ && autoMode <= 5 /* latch preview */)
 			{
 				GetSetMediaTrackInfo(tr, "I_AUTOMODE", &g_i1); // set read mode
 				g_toolbarAutoModeToggles.Add(new SNM_TrackInt(tr, autoMode));
@@ -627,48 +707,10 @@ int WriteEnvExists(COMMAND_T* _ct)
 	{
 		MediaTrack* tr = CSurf_TrackFromID(i, false); 
 		int autoMode = tr ? *(int*)GetSetMediaTrackInfo(tr, "I_AUTOMODE", NULL) : -1;
-		if (autoMode >= 2 /* touch */ && autoMode <= 4 /* latch */)
+		if (autoMode >= 2 /* touch */ && autoMode <= 5 /* latch preview */)
 			return true;
 	}
 	return false;
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-// Track icons
-///////////////////////////////////////////////////////////////////////////////
-
-// return false if no track icon has been found
-// note: _fnOutSz is ignored atm
-bool GetTrackIcon(MediaTrack* _tr, char* _fnOut, int _fnOutSz)
-{
-	if (_tr && _fnOut && _tr!=GetMasterTrack(NULL))  // exclude master (icon not supported yet, v4.13) 
-	{
-		SNM_ChunkParserPatcher p(_tr);
-		p.SetWantsMinimalState(true);
-		return (p.Parse(SNM_GET_CHUNK_CHAR, 1, "TRACK", "TRACKIMGFN", 0, 1, _fnOut, NULL, "TRACKID") > 0);
-	}
-	return false;
-}
-
-// primitive (no undo point), removes track icon if _fn == ""
-bool SetTrackIcon(MediaTrack* _tr, const char* _fn)
-{
-	bool updated = false;
-	if (_tr && _fn && _tr!=GetMasterTrack(NULL)) // exclude master (icon not supported yet, v4.13)
-	{
-		SNM_ChunkParserPatcher p(_tr); // nothing done yet
-		int iconChunkPos = p.Parse(SNM_GET_CHUNK_CHAR, 1, "TRACK", "TRACKIMGFN", 0, 1, NULL, NULL, "TRACKID");
-		char pIconLine[SNM_MAX_CHUNK_LINE_LENGTH] = "";
-		if (_snprintfStrict(pIconLine, sizeof(pIconLine), "TRACKIMGFN \"%s\"\n", _fn) > 0)
-		{
-			if (iconChunkPos > 0)
-				updated |= p.ReplaceLine(--iconChunkPos, pIconLine); //JFB!! to update with SNM_ChunkParserPatcher v2
-			else 
-				updated |= p.InsertAfterBefore(0, pIconLine, "TRACK", "FX", 1, 0, "TRACKID");
-		}
-	}
-	return updated;
 }
 
 
@@ -686,7 +728,7 @@ bool MakeSingleTrackTemplateChunk(WDL_FastString* _in, WDL_FastString* _out, boo
 		SNM_ChunkParserPatcher pin(_in);
 		if (pin.GetSubChunk("TRACK", 1, _tmpltIdx, _out) >= 0)
 		{
-			int* offsOpt = _obeyOffset ? (int*)GetConfigVar("templateditcursor") : NULL; // >= REAPER v4.15
+			const int offsOpt = _obeyOffset ? ConfigVar<int>("templateditcursor").value_or(0) : 0; // >= REAPER v4.15
 
 			// remove receives from the template as we deal with a single track
 			// note: possible with multiple tracks in a same template file (w/ routings between those tracks)
@@ -695,14 +737,14 @@ bool MakeSingleTrackTemplateChunk(WDL_FastString* _in, WDL_FastString* _out, boo
 
 			if (_delItems) // remove items from template (in one go)
 				pout.RemoveSubChunk("ITEM", 2, -1);
-			else if (offsOpt && *offsOpt) { // or offset them if needed
+			else if (offsOpt) { // or offset them if needed
 				double add = GetCursorPositionEx(NULL);
 				pout.ParsePatch(SNM_D_ADD, 2, "ITEM", "POSITION", -1, 1, &add);
 			}
 
 			if (_delEnvs) // remove all envs from template (in one go)
 				pout.RemoveEnvelopes();
-			else if (offsOpt && *offsOpt) // or offset them if needed
+			else if (offsOpt) // or offset them if needed
 				pout.OffsetEnvelopes(GetCursorPositionEx(NULL));
 			return true;
 		}
@@ -753,8 +795,7 @@ bool ReplacePasteItemsFromTrackTemplate(MediaTrack* _tr, WDL_FastString* _tmpltI
 			WDL_FastString tmpltItems(_tmpltItems); // do not alter _tmpltItems!
 
 			// offset items if needed
-			int* offsOpt = (int*)GetConfigVar("templateditcursor"); // >= REAPER v4.15
-			if (offsOpt && *offsOpt)
+			if (ConfigVar<int>("templateeditcursor").value_or(0)) // >= REAPER v4.15
 			{
 				double add = GetCursorPositionEx(NULL);
 				SNM_ChunkParserPatcher pitems(&tmpltItems);
@@ -1040,7 +1081,7 @@ void SaveSelTrackTemplates(bool _delItems, bool _delEnvs, WDL_FastString* _chunk
 void SetMIDIInputChannel(COMMAND_T* _ct)
 {
 	bool updated = false;
-	int ch = (int)_ct->user; // 0: all channels
+	int ch = ((int)_ct->user)+1; // ch=0: all channels
 	for (int i=1; i <= GetNumTracks(); i++) // skip master
 	{
 		MediaTrack* tr = CSurf_TrackFromID(i, false);
@@ -1063,10 +1104,10 @@ void SetMIDIInputChannel(COMMAND_T* _ct)
 void RemapMIDIInputChannel(COMMAND_T* _ct)
 {
 	bool updated = false;
-	int ch = (int)_ct->user; // 0: source channel
+	int ch = ((int)_ct->user)+1; // ch=0: source channel
 
 	char pLine[SNM_MAX_CHUNK_LINE_LENGTH] = "";
-	if (ch && _snprintfStrict(pLine, sizeof(pLine), "MIDI_INPUT_CHANMAP %d\n", ch-1) <= 0)
+	if (ch && snprintfStrict(pLine, sizeof(pLine), "MIDI_INPUT_CHANMAP %d\n", ch-1) <= 0)
 		return;
 
 	for (int i=1; i <= GetNumTracks(); i++) // skip master
@@ -1097,8 +1138,6 @@ void RemapMIDIInputChannel(COMMAND_T* _ct)
 ///////////////////////////////////////////////////////////////////////////////
 // Play track preview
 ///////////////////////////////////////////////////////////////////////////////
-
-PCM_source* g_cc123src = NULL;
 
 // helper funcs
 void TrackPreviewInitDeleteMutex(preview_register_t* _prev, bool _init) {
@@ -1136,17 +1175,19 @@ void DeleteTrackPreview(void* _prev)
 	if (_prev)
 	{
 		preview_register_t* prev = (preview_register_t*)_prev;
-		if (prev->src!=g_cc123src)
-			DELETE_NULL(prev->src);
+		StopTrackPreview2(NULL, prev);
+		DELETE_NULL(prev->src);
 		TrackPreviewInitDeleteMutex(prev, false);
 		DELETE_NULL(prev);
 	}
 }
 
-// such locks should be avoided as far as possible
+// can be used to start/pause all track previews in sync, such a lock should be avoided though
 // => the related pref is intentionally burried in S&M.ini (for very specific use-cases)
-void TrackPreviewLockUnlockTracks(bool _lock) {
-	if (g_SNM_MediaFlags&1) {
+void TrackPreviewLockUnlockTracks(bool _lock)
+{
+	if (g_SNM_MediaFlags&1)
+	{
 		if (_lock) MainThread_LockTracks();
 		else MainThread_UnlockTracks();
 	}
@@ -1164,61 +1205,52 @@ public:
 	{
 		return (_prev && _prev->preview_track == m_tr && 
 			_prev->src && _prev->src->GetFileName() &&
-			!strcmp(_prev->src->GetFileName(), m_fn.Get()));
+			!_stricmp(_prev->src->GetFileName(), m_fn.Get()));
 	}
 	WDL_FastString m_fn; MediaTrack* m_tr; double m_pos;
 };
 
+// no WDL_PtrList_DOD here: need to stop the preview (and delete it, delete its src, etc)
 WDL_PtrList_DeleteOnDestroy<preview_register_t> g_playPreviews(DeleteTrackPreview);
-WDL_PtrList_DeleteOnDestroy<PausedPreview> g_pausedPreviews;
-#ifdef _SNM_MUTEX
-SWS_Mutex g_playPreviewsMutex; // g_playPreviews + g_pausedItems mutex
-#endif
+WDL_PtrList_DOD<PausedPreview> g_pausedPreviews;
 
 
 // stop playing track previews if needed
 // polled from the main thread via SNM_CSurfRun()
 void StopTrackPreviewsRun()
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_playPreviewsMutex);
-#endif
-	WDL_PtrList<void>* cc123Trs = NULL;
+	static WDL_PtrList<void> ano_trs;
 	for (int i=g_playPreviews.GetSize()-1; i >=0; i--)
 	{
 		if (preview_register_t* prev = g_playPreviews.Get(i))
 		{
-			TrackPreviewLockUnlockMutex(prev, true);
+			bool want_delete=false;
 
+			TrackPreviewLockUnlockMutex(prev, true);
 			if (!prev->loop && 
-				(prev->volume < 0.5 || // preview has been stopped
-				prev->curpos > prev->src->GetLength())) // preview has been entirely played
+				(prev->volume < 0.5 || // stop has been requested
+				prev->curpos >= prev->src->GetLength() || // preview has been entirely played
+				fabs(prev->curpos - prev->src->GetLength()) < 0.000001))
 			{
 				// prepare all notes off, if needed (i.e. only for stopped MIDI files)
-				if (prev->src != g_cc123src &&
-					prev->volume < 0.5 && // stopped files only, no cc123 is sent when files end normally
+				if (prev->volume < 0.5 && // stopped files only, no cc123 is sent when files end normally
 					!strncmp(prev->src->GetType(), "MIDI", 4) && 
-					(!cc123Trs || (cc123Trs && cc123Trs->Find(prev->preview_track) == -1)))
+					ano_trs.Find(prev->preview_track) < 0)
 				{
-					if (!cc123Trs) cc123Trs = new WDL_PtrList<void>;
-					cc123Trs->Add(prev->preview_track);
+					ano_trs.Add(prev->preview_track);
 				}
-
-				TrackPreviewLockUnlockMutex(prev, false);
-
-				StopTrackPreview(prev);
-				g_playPreviews.Delete(i, true, DeleteTrackPreview);
+				want_delete=true;
 			}
-			else
-				TrackPreviewLockUnlockMutex(prev, false);
+			TrackPreviewLockUnlockMutex(prev, false);
+
+			// stop and delete the preview, its src, etc
+			if (want_delete) g_playPreviews.Delete(i, true, DeleteTrackPreview);
 		}
 	}
 
 	// send all notes off, if needed
-	if (cc123Trs) {
-		SendAllNotesOff(cc123Trs);
-		delete cc123Trs;
-	}
+	SendAllNotesOff(&ano_trs, 1|2);
+	ano_trs.Empty();
 }
 
 // from askjf.com:
@@ -1227,9 +1259,6 @@ void StopTrackPreviewsRun()
 // MSI is the measure start interval, which if set to n greater than 0, means start synchronized to playback synchronized to a multiple of n measures
 bool SNM_PlayTrackPreview(MediaTrack* _tr, PCM_source* _src, bool _pause, bool _loop, double _msi)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_playPreviewsMutex);
-#endif
 	bool ok = false;
 	if (_src)
 	{
@@ -1246,17 +1275,21 @@ bool SNM_PlayTrackPreview(MediaTrack* _tr, PCM_source* _src, bool _pause, bool _
 		// update start position for paused items
 		// note: no need to mutex "prev" here as it is not started yet
 		if (_pause)
+		{
 			for (int i=g_pausedPreviews.GetSize()-1; i>=0; i--)
+			{
 				if (g_pausedPreviews.Get(i)->IsMatching(prev))
 				{
 					prev->curpos = g_pausedPreviews.Get(i)->m_pos;
 					g_pausedPreviews.Delete(i, true);
 //					break;
 				}
+			}
+		}
 
 		// go!
 		g_playPreviews.Add(prev);
-		ok = (PlayTrackPreview2Ex(NULL, prev, _msi>0.0 ? 1:0, _msi>0.0? _msi:0.0) != 0);
+		ok = (PlayTrackPreview2Ex(NULL, prev, !!_msi, _msi) != 0);
 	}
 	return ok;
 }
@@ -1271,7 +1304,7 @@ bool SNM_PlayTrackPreview(MediaTrack* _tr, const char* _fn, bool _pause, bool _l
 
 void SNM_PlaySelTrackPreviews(const char* _fn, bool _pause, bool _loop, double _msi)
 {
-	TrackPreviewLockUnlockTracks(true); // so that all tracks are started together
+	TrackPreviewLockUnlockTracks(true);
 	for (int i=1; i <= GetNumTracks(); i++) // skip master
 	{
 		MediaTrack* tr = CSurf_TrackFromID(i, false);
@@ -1284,7 +1317,7 @@ void SNM_PlaySelTrackPreviews(const char* _fn, bool _pause, bool _loop, double _
 // returns true if something done
 bool SNM_TogglePlaySelTrackPreviews(const char* _fn, bool _pause, bool _loop, double _msi)
 {
-	TrackPreviewLockUnlockTracks(true); // so that all tracks are started/paused together
+	TrackPreviewLockUnlockTracks(true);
 
 	bool done = false;
 	WDL_PtrList<void> trsToStart;
@@ -1296,11 +1329,7 @@ bool SNM_TogglePlaySelTrackPreviews(const char* _fn, bool _pause, bool _loop, do
 	}
 
 	{
-#ifdef _SNM_MUTEX
-		SWS_SectionLock lock(&g_playPreviewsMutex);
-#endif
-
-		// stop play if needed, store otherwise
+		// stop play if needed, store if paused
 		for (int i=g_playPreviews.GetSize()-1; i >=0; i--)
 		{
 			preview_register_t* prev = g_playPreviews.Get(i);
@@ -1312,12 +1341,11 @@ bool SNM_TogglePlaySelTrackPreviews(const char* _fn, bool _pause, bool _loop, do
 					TrackPreviewLockUnlockMutex(prev, true);
 					if (prev->preview_track == tr && 
 						prev->volume > 0.5 && // playing
-						!strcmp(prev->src->GetFileName(), _fn))
+						!_stricmp(prev->src->GetFileName(), _fn))
 					{
 						prev->loop = false;
 						prev->volume = 0.0; // => will be stopped by next call to StopTrackPreviewsRun()
-						if (_pause)
-							g_pausedPreviews.Insert(0, new PausedPreview(_fn, tr, prev->curpos)); 
+						if (_pause) g_pausedPreviews.Insert(0, new PausedPreview(_fn, tr, prev->curpos)); 
 						trsToStart.Delete(trsToStart.Find(tr));
 						done = true;
 					}
@@ -1339,17 +1367,14 @@ bool SNM_TogglePlaySelTrackPreviews(const char* _fn, bool _pause, bool _loop, do
 
 void StopTrackPreviews(bool _selTracksOnly)
 {
-	TrackPreviewLockUnlockTracks(true); // so that all tracks are stopped together
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_playPreviewsMutex);
-#endif
+	TrackPreviewLockUnlockTracks(true);
 	for (int i=g_playPreviews.GetSize()-1; i >= 0; i--)
 	{
 		preview_register_t* prev = g_playPreviews.Get(i);
 		for (int j=1; j <= GetNumTracks(); j++) // skip master
 		{
 			MediaTrack* tr = CSurf_TrackFromID(j, false);
-			if (tr && (!_selTracksOnly || (_selTracksOnly && *(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL))))
+			if (tr && (!_selTracksOnly ||*(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL)))
 			{
 				TrackPreviewLockUnlockMutex(prev, true);
 
@@ -1375,102 +1400,127 @@ void StopTrackPreviews(COMMAND_T* _ct) {
 
 
 ///////////////////////////////////////////////////////////////////////////////
-// Send CC123 on all channels (async.)
+// Send CC123//CC64/CC120 on all channels
 ///////////////////////////////////////////////////////////////////////////////
 
-bool HasAllNotesOff()
+class AllNoteOffSource : public PCM_source
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_playPreviewsMutex);
-#endif
-	bool hasCC123 = false;
-	for (int i=g_playPreviews.GetSize()-1; !hasCC123 && i>=0; i--) // !hasCC123 to optimize mutexing etc
-		if (preview_register_t* prev = g_playPreviews.Get(i))
-		{
-			TrackPreviewLockUnlockMutex(prev, true);
-			hasCC123 |= (prev->src == g_cc123src);
-			TrackPreviewLockUnlockMutex(prev, false);
-		}
-	return hasCC123;
-}
+public:
+  AllNoteOffSource(int flags) { m_hasdone=0; m_flags=flags; }
+  ~AllNoteOffSource() { }
+  PCM_source *Duplicate() { return new AllNoteOffSource(m_flags); }
+  bool SetFileName(const char *newfn) { return false; } 
+  bool IsAvailable() { return true; }
+  const char *GetType() { return "S&M_ALLNOTEOFFS"; };
+  int GetNumChannels() { return 1; }
+  double GetSampleRate() { return 0.0; }
+  double GetLength() { return 10000000000000.0; }
+  int PropertiesWindow(HWND hwndParent) { return -1; }
+  void SaveState(ProjectStateContext *ctx) {}
+  int LoadState(const char *firstline, ProjectStateContext *ctx) { return -1; }
+  void Peaks_Clear(bool deleteFile) { }
+  int PeaksBuild_Begin() { return 0; }
+  int PeaksBuild_Run() { return 0; }
+  void PeaksBuild_Finish() { }
+  void GetPeakInfo(PCM_source_peaktransfer_t *block) { block->peaks_out=0; }
+  
+  void GetSamples(PCM_source_transfer_t *block)
+  {
+    block->samples_out=0;
+    if (block->midi_events && !m_hasdone)
+    {
+      m_hasdone=1;
+      block->samples_out=block->length;
+      memset(block->samples,0,block->length*block->nch*sizeof(double));
+      for (int x = 0; x < 16; x ++)
+      {
+        MIDI_event_t e={0, 3, {static_cast<unsigned char>(0xb0 + x)}};
+        if (m_flags&1)
+        {
+          e.midi_message[1]=64;
+          block->midi_events->AddItem(&e);
+        }
+        if (m_flags&2)
+        {
+          e.midi_message[1]=123;
+          block->midi_events->AddItem(&e);
+        }
+        if (m_flags&4)
+        {
+          e.midi_message[1]=120;
+          block->midi_events->AddItem(&e);
+        }
+      }
+    }
+  }
+  
+  int m_hasdone;
+  int m_flags;
+};
 
-void WaitForAllNotesOff()
+// _cc_flags&1=send cc#64 messages (reset sustain), &2=cc#123 (all notes off), &4=cc#120 (all sounds off)
+bool SendAllNotesOff(WDL_PtrList<void>* _trs, int _cc_flags)
 {
-	DWORD startWaitTime = GetTickCount();
-	while (HasAllNotesOff())
+	const int trs_sz=_trs->GetSize();
+	if (!_trs || !trs_sz) return false;
+
+	int i, cnt = 0;
+	WDL_PtrList_DeleteOnDestroy<preview_register_t> anos_prevs(DeleteTrackPreview);
+	for (i=0; i<trs_sz; i++)
 	{
-		// timeout safety ~1s
-		if ((GetTickCount()-startWaitTime) > 1000)
-			break;
+		AllNoteOffSource *anos = new AllNoteOffSource(_cc_flags);
+
+		preview_register_t *prev = anos_prevs.Add(new preview_register_t);
+		memset(prev, 0, sizeof(preview_register_t));
+		TrackPreviewInitDeleteMutex(prev, true);
+		prev->src = anos;
+		prev->m_out_chan = -1;
+		prev->curpos = 0.0;
+		prev->loop = false;
+		prev->volume = 1.0;
+		prev->preview_track = _trs->Get(i);
+
+		if (PlayTrackPreview2Ex(NULL, prev, 0, 0.0)) cnt++;
+		else anos->m_hasdone=true; // no locking needed here (not played)
+  }
+
+  // wait for all-notes-off to be sent before stopping
+  int safety=0;
+  int prev_cnt;
+  while (safety<250 && (prev_cnt=anos_prevs.GetSize()))
+  {
+    for (i=prev_cnt-1; i>=0; i--)
+    {
+      preview_register_t *prev = anos_prevs.Get(i);
+      AllNoteOffSource *anos = (AllNoteOffSource*)prev->src;
+
+      // DeleteTrackPreview() will stop and delete the preview, its src, etc
+      if (anos->m_hasdone) anos_prevs.Delete(i, true, DeleteTrackPreview);
+    }
 #ifdef _WIN32
-		// keep the UI updating
-		MSG msg;
-		while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
-			DispatchMessage(&msg);
+    // keep the UI updating
+    if (safety)
+    {
+      MSG msg;
+      while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
+      DispatchMessage(&msg);
+    }
 #endif
-		Sleep(1);
-		StopTrackPreviewsRun(); // trick: direct call as SNM_CSurfRun() not being called because of this loop
-	}
-#ifdef _SNM_DEBUG
-	char dbg[256] = "";
-	_snprintfSafe(dbg, sizeof(dbg), "WaitForAllNotesOff() - Approx wait time: %d ms\n", GetTickCount() - startWaitTime);
-	OutputDebugString(dbg);
-#endif
+    Sleep(1);
+    safety++;
+  }
+  return !!cnt;
 }
 
-bool SendAllNotesOff(MediaTrack* _tr)
+// wrapping func
+bool SendAllNotesOff(MediaTrack* _tr, int _cc_flags)
 {
-	if (_tr) {
-		WDL_PtrList<void> trs; trs.Add(_tr);
-		return SendAllNotesOff(&trs);
-	}
-	return false;
-}
-
-bool SendAllNotesOff(WDL_PtrList<void>* _trs)
-{
-	if (!_trs || !_trs->GetSize())
-		return false;
-
-	// lazy init of the "all notes off" PCM_source: 1st try (loading source state)
-	if (!g_cc123src)
-	{
-		WDL_HeapBuf hb;
-		int len = strlen(SNM_CC123_MID_STATE);
-		void* p = hb.Resize(len, false);
-		if (p && hb.GetSize()==len)
-		{
-			if ((g_cc123src = PCM_Source_CreateFromType("MIDI")))
-			{
-				memcpy(p, SNM_CC123_MID_STATE, len);
-				ProjectStateContext* ctx = ProjectCreateMemCtx(&hb);
-				if (g_cc123src->LoadState((char*)"<SOURCE MIDI\n", ctx) < 0)
-					DELETE_NULL(g_cc123src);
-				delete ctx;
-			}
-		}
-	}
-
-	// lazy init of the "all notes off" PCM_source: 2nd try (via temp .mid file)
-	if (!g_cc123src)
-	{
-		if (WDL_HeapBuf* hb = TranscodeStr64ToHeapBuf(SNM_CC123_MID_FILE))
-		{
-			WDL_FastString cc123fn;
-			cc123fn.SetFormatted(SNM_MAX_PATH, "%s%cS&M_CC123.mid", GetResourcePath(), PATH_SLASH_CHAR);
-			if (SaveBin(cc123fn.Get(), hb)) {
-				g_cc123src = PCM_Source_CreateFromFileEx(cc123fn.Get(), false); // "false" so that the src is imported as in-project data (to delete the temp file) 
-				SNM_DeleteFile(cc123fn.Get(), false);
-			}
-			delete hb;
-		}
-	}
-
-	bool play = false;
-	if (g_cc123src)
-		for (int i=0; i < _trs->GetSize(); i++)
-			play |= SNM_PlayTrackPreview((MediaTrack*)_trs->Get(i), g_cc123src, false, false, -1.0);
-	return play;
+  if (_tr)
+  {
+    WDL_PtrList<void> trs; trs.Add(_tr);
+    return SendAllNotesOff(&trs, _cc_flags);
+  }
+  return false;
 }
 
 void SendAllNotesOff(COMMAND_T* _ct)
@@ -1480,7 +1530,7 @@ void SendAllNotesOff(COMMAND_T* _ct)
 		if (MediaTrack* tr = CSurf_TrackFromID(j, false))
 			if (*(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL))
 				trs.Add(tr);
-	SendAllNotesOff(&trs);
+	SendAllNotesOff(&trs, (int)_ct->user);
 }
 
 
@@ -1511,7 +1561,7 @@ bool SNM_AddTCPFXParm(MediaTrack* _tr, int _fxId, int _prmId)
 			if (pos>0)
 			{
 				char line[SNM_MAX_CHUNK_LINE_LENGTH] = "";
-				if (_snprintfStrict(line, sizeof(line), "PARM_TCP %d\n", _prmId) > 0)
+				if (snprintfStrict(line, sizeof(line), "PARM_TCP %d\n", _prmId) > 0)
 				{
 					pfxc.GetChunk()->Insert(line, --pos);
 					if (p.ReplaceSubChunk("FXCHAIN", 2, 0, pfxc.GetChunk()->Get(), "<ITEM")) {

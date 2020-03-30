@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2013-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -280,8 +280,8 @@ static bool MoveGridInit (COMMAND_T* ct, bool init)
 	bool initSuccessful = true;
 	if (init)
 	{
-		int projgridframe; GetConfig("projgridframe", projgridframe);
-		if (((int)ct->user == 1 || (int)ct->user == 2) && projgridframe > 0)
+		const int projgridframe = ConfigVar<int>("projgridframe").value_or(0);
+		if (((int)ct->user == 1 || (int)ct->user == 2) && projgridframe&1) // frames grid line spacing
 		{
 			initSuccessful = false;
 			static bool s_warnUser = true;
@@ -294,15 +294,16 @@ static bool MoveGridInit (COMMAND_T* ct, bool init)
 		}
 		else
 		{
-			GetConfig("undomask", s_editCursorUndo);
+			ConfigVar<int> undomask("undomask");
+			s_editCursorUndo = undomask.value_or(0);
 			initSuccessful = PositionAtMouseCursor(true) != -1;
 			if (initSuccessful)
-				SetConfig("undomask", ClearBit(s_editCursorUndo, 3));
+				undomask.try_set(ClearBit(s_editCursorUndo, 3));
 		}
 	}
 	else
 	{
-		SetConfig("undomask", s_editCursorUndo);
+		ConfigVar<int>("undomask").try_set(s_editCursorUndo);
 		delete g_moveGridTempoMap;
 		g_moveGridTempoMap = NULL;
 	}
@@ -475,9 +476,10 @@ void MoveGridToEditPlayCursor (COMMAND_T* ct)
 	BR_Envelope tempoMap(GetTempoEnv());
 
 	// Prevent play cursor from jumping
-	int seekmodes; GetConfig("seekmodes", seekmodes);
+	ConfigVar<int> seekmodes("seekmodes");
+	const int originalSeekmodes = seekmodes.value_or(0);
 	if ((int)ct->user == 1 || (int)ct->user == 3)
-		SetConfig("seekmodes", ClearBit(seekmodes, 5));
+		seekmodes.try_set(ClearBit(originalSeekmodes, 5));
 
 	// Find closest grid
 	double grid = 0;
@@ -530,7 +532,7 @@ void MoveGridToEditPlayCursor (COMMAND_T* ct)
 		RemoveTempoMap();
 
 	PreventUIRefresh(-1);
-	SetConfig("seekmodes", seekmodes);
+	seekmodes.try_set(originalSeekmodes);
 }
 
 void MoveTempo (COMMAND_T* ct)
@@ -592,7 +594,7 @@ void MoveTempo (COMMAND_T* ct)
 	if (s_warnUser && skipped != 0 && !tempoMap.IsLocked())
 	{
 		char buffer[512];
-		_snprintfSafe(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
+		snprintf(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
 		int userAnswer = MessageBox(g_hwndParent, buffer, __LOCALIZE("SWS/BR - Warning", "sws_mbox"), MB_YESNO);
 		if (userAnswer == IDNO)
 			s_warnUser = false;
@@ -927,7 +929,7 @@ void EditTempo (COMMAND_T* ct)
 	if (s_warnUser && skipped != 0 && tempoMap.CountSelected() > 1 && !tempoMap.IsLocked())
 	{
 		char buffer[512];
-		_snprintfSafe(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
+		snprintf(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
 		int userAnswer = MessageBox(g_hwndParent ,buffer, __LOCALIZE("SWS/BR - Warning", "sws_mbox"), MB_YESNO);
 		if (userAnswer == IDNO)
 			s_warnUser = false;
@@ -1101,7 +1103,7 @@ void EditTempoGradual (COMMAND_T* ct)
 	if (s_warnUser && skipped != 0 && tempoMap.CountSelected() > 1 && !tempoMap.IsLocked())
 	{
 		char buffer[512];
-		_snprintfSafe(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
+		snprintf(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
 		int userAnswer = MessageBox(g_hwndParent ,buffer, __LOCALIZE("SWS/BR - Warning", "sws_mbox"), MB_YESNO);
 		if (userAnswer == IDNO)
 			s_warnUser = false;
@@ -1147,7 +1149,7 @@ void DeleteTempo (COMMAND_T* ct)
 	if (s_warnUser && skipped != 0)
 	{
 		char buffer[512];
-		_snprintfSafe(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
+		snprintf(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
 		int userAnswer = MessageBox(g_hwndParent, buffer, __LOCALIZE("SWS/BR - Warning", "sws_mbox"), MB_YESNO);
 		if (userAnswer == IDNO)
 			s_warnUser = false;
@@ -1165,7 +1167,7 @@ void DeleteTempoPreserveItems (COMMAND_T* ct)
 	double firstMarker;
 	tempoMap.GetPoint(tempoMap.GetSelected(0), &firstMarker, NULL, NULL, NULL);
 
-	int itemCount = ((int)ct->user) ? CountSelectedMediaItems(NULL) : CountMediaItems(NULL);
+	const int itemCount = ((int)ct->user) ? CountSelectedMediaItems(NULL) : CountMediaItems(NULL);
 	items.reserve(itemCount);
 	for (int i = 0; i < itemCount; ++i)
 	{
@@ -1179,7 +1181,7 @@ void DeleteTempoPreserveItems (COMMAND_T* ct)
 	}
 
 	// Readjust unselected tempo markers if needed
-	int timeBase; GetConfig("tempoenvtimelock", timeBase);
+	const int timeBase = ConfigVar<int>("tempoenvtimelock").value_or(0);
 	if (timeBase != 0)
 	{
 		double offset = 0;
@@ -1293,8 +1295,8 @@ void SelectMovePartialTimeSig (COMMAND_T* ct)
 {
 	PreventUIRefresh(1);
 
-	int tempoTimeBase; GetConfig("tempoenvtimelock", tempoTimeBase); // always work with tempo timbase beats
-	SetConfig("tempoenvtimelock", 1);                                // when running these actions
+	// always work with tempo timbase beats when running these actions
+	ConfigVarOverride<int> tempoTimeBase("tempoenvtimelock", 1);
 
 	bool update = false;
 	BR_Envelope tempoMap(GetTempoEnv());
@@ -1359,7 +1361,6 @@ void SelectMovePartialTimeSig (COMMAND_T* ct)
 		}
 	}
 
-	SetConfig("tempoenvtimelock", tempoTimeBase);
 	if (tempoMap.Commit() || update)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(ct), UNDO_STATE_TRACKCFG, -1);
 
@@ -1470,7 +1471,7 @@ void TempoShapeLinear (COMMAND_T* ct)
 	if (s_warnUser && skipped != 0 && !tempoMap.IsLocked())
 	{
 		char buffer[512];
-		_snprintfSafe(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
+		snprintf(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
 		int userAnswer = MessageBox(g_hwndParent, buffer, __LOCALIZE("SWS/BR - Warning", "sws_mbox"), MB_YESNO);
 		if (userAnswer == IDNO)
 			s_warnUser = false;
@@ -1596,7 +1597,7 @@ void TempoShapeSquare (COMMAND_T* ct)
 	if (s_warnUser && skipped != 0 && !tempoMap.IsLocked())
 	{
 		char buffer[512];
-		_snprintfSafe(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
+		snprintf(buffer, sizeof(buffer), __LOCALIZE_VERFMT("%d of the selected points didn't get processed because some points would end up with illegal BPM or position. Would you like to be warned if it happens again?", "sws_mbox"), skipped);
 		int userAnswer = MessageBox(g_hwndParent, buffer, __LOCALIZE("SWS/BR - Warning", "sws_mbox"), MB_YESNO);
 		if (userAnswer == IDNO)
 			s_warnUser = false;
@@ -1617,11 +1618,11 @@ void ConvertMarkersToTempoDialog (COMMAND_T* ct)
 	{
 		// Detect timebase
 		bool cancel = false;
-		int timebase; GetConfig("itemtimelock", timebase);
-		if (timebase)
+		ConfigVar<int> timebase("itemtimelock");
+		if (timebase && *timebase != 0)
 		{
 			int answer = MessageBox(g_hwndParent, __LOCALIZE("Project timebase is not set to time. Do you want to set it now?","sws_DLG_166"), __LOCALIZE("SWS/BR - Warning", "sws_mbox"), MB_YESNOCANCEL);
-			if      (answer == 6) SetConfig("itemtimelock", 0);
+			if      (answer == 6) *timebase = 0;
 			else if (answer == 2) cancel = true;
 		}
 

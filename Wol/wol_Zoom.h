@@ -1,9 +1,9 @@
 /******************************************************************************
 / wol_Zoom.h
 /
-/ Copyright (c) 2014-2015 wol
+/ Copyright (c) 2014 and later wol
 / http://forum.cockos.com/member.php?u=70153
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -48,6 +48,8 @@ void VerticalZoomSelectedEnvelopeLoUpHalf(COMMAND_T* ct);
 
 void SetVerticalZoomCenter(COMMAND_T* ct);
 void SetHorizontalZoomCenter(COMMAND_T* ct);
+
+void SaveApplyHeightSelectedEnvelopeSlot(COMMAND_T* ct);
 
 
 

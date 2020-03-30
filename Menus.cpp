@@ -32,9 +32,7 @@
 #include "./reaper/localize.h"
 
 
-// *************************** UTILITY FUNCTIONS ***************************
-
-void AddToMenuOld(HMENU hMenu, const char* text, int id, int iInsertAfter, bool bPos, UINT uiSate)
+void AddToMenuOrdered(HMENU hMenu, const char* text, int id, int iInsertAfter, bool bPos, UINT uiSate)
 {
 	if (!text)
 		return;
@@ -84,7 +82,7 @@ void AddToMenu(HMENU hMenu, const char* text, int id, int iInsertAfter, bool bPo
 		return;
 
 	if(!IsLocalized() || bPos || iInsertAfter != -1) {
-		AddToMenuOld(hMenu, text, id, iInsertAfter, bPos, uiSate);
+		AddToMenuOrdered(hMenu, text, id, iInsertAfter, bPos, uiSate);
 		return;
 	}
 
@@ -247,7 +245,7 @@ void SWSCreateExtensionsMenu(HMENU hMenu)
 		AddToMenu(hMenu, SWS_SEPARATOR, 0);
 
 	AddToMenu(hMenu, __LOCALIZE("About SWS Extension", "sws_ext_menu"), NamedCommandLookup("_SWS_ABOUT"));
-	AddToMenu(hMenu, __LOCALIZE("Auto Color/Icon", "sws_ext_menu"), NamedCommandLookup("_SWSAUTOCOLOR_OPEN"));
+	AddToMenu(hMenu, __LOCALIZE("Auto Color/Icon/Layout", "sws_ext_menu"), NamedCommandLookup("_SWSAUTOCOLOR_OPEN"));
 
 	HMENU hAutoRenderSubMenu = CreatePopupMenu();
 	AddSubMenu(hMenu, hAutoRenderSubMenu, __LOCALIZE("Autorender", "sws_ext_menu"));
@@ -270,10 +268,11 @@ void SWSCreateExtensionsMenu(HMENU hMenu)
 	AddToMenu(hMenu, __LOCALIZE("Loudness...", "sws_ext_menu"), NamedCommandLookup("_BR_ANALAYZE_LOUDNESS_DLG"));
 	AddToMenu(hMenu, __LOCALIZE("LFO generator...", "sws_ext_menu"), NamedCommandLookup("_PADRE_ENVLFO"));
 	AddToMenu(hMenu, __LOCALIZE("Live Configs", "sws_ext_menu"), NamedCommandLookup("_S&M_SHOWMIDILIVE"));
-	AddToMenu(hMenu, __LOCALIZE("MarkerList", "sws_ext_menu"), NamedCommandLookup("_SWSMARKERLIST1"));
 
 	HMENU hMarkerSubMenu = CreatePopupMenu();
 	AddSubMenu(hMenu, hMarkerSubMenu, __LOCALIZE("Marker utilites", "sws_ext_menu"));
+	AddToMenu(hMarkerSubMenu, __LOCALIZE("MarkerList", "sws_ext_menu"), NamedCommandLookup("_SWSMARKERLIST1"));
+	AddToMenu(hMarkerSubMenu, SWS_SEPARATOR, 0);
 	AddToMenu(hMarkerSubMenu, __LOCALIZE("Load marker set...", "sws_ext_menu"), NamedCommandLookup("_SWSMARKERLIST2"));
 	AddToMenu(hMarkerSubMenu, __LOCALIZE("Save marker set...", "sws_ext_menu"), NamedCommandLookup("_SWSMARKERLIST3"));
 	AddToMenu(hMarkerSubMenu, __LOCALIZE("Delete marker set...", "sws_ext_menu"), NamedCommandLookup("_SWSMARKERLIST4"));
@@ -289,10 +288,11 @@ void SWSCreateExtensionsMenu(HMENU hMenu)
 	AddToMenu(hMarkerSubMenu, __LOCALIZE("Delete all markers", "sws_ext_menu"), NamedCommandLookup("_SWSMARKERLIST9"));
 	AddToMenu(hMarkerSubMenu, __LOCALIZE("Delete all regions", "sws_ext_menu"), NamedCommandLookup("_SWSMARKERLIST10"));
 	AddToMenu(hMenu, __LOCALIZE("Notes", "sws_ext_menu"), NamedCommandLookup("_S&M_SHOW_NOTES_VIEW"));
-	AddToMenu(hMenu, __LOCALIZE("Project List", "sws_ext_menu"), NamedCommandLookup("_SWS_PROJLIST_OPEN"));
 
 	HMENU hPrjMgmtSubMenu = CreatePopupMenu();
 	AddSubMenu(hMenu, hPrjMgmtSubMenu, __LOCALIZE("Project Management", "sws_ext_menu"));
+	AddToMenu(hPrjMgmtSubMenu, __LOCALIZE("ProjectList", "sws_ext_menu"), NamedCommandLookup("_SWS_PROJLIST_OPEN"));
+	AddToMenu(hPrjMgmtSubMenu, SWS_SEPARATOR, 0);
 	AddToMenu(hPrjMgmtSubMenu, __LOCALIZE("Open projects from list...", "sws_ext_menu"), NamedCommandLookup("_SWS_PROJLISTSOPEN"));
 	AddToMenu(hPrjMgmtSubMenu, __LOCALIZE("Save list of open projects...", "sws_ext_menu"), NamedCommandLookup("_SWS_PROJLISTSAVE"));
 	AddToMenu(hPrjMgmtSubMenu, __LOCALIZE("Add related project(s)...", "sws_ext_menu"), NamedCommandLookup("_SWS_ADDRELATEDPROJ"));
@@ -323,8 +323,9 @@ void SWSCreateExtensionsMenu(HMENU hMenu)
 	AddToMenu(hTempoSubMenu, __LOCALIZE("Options for setting tempo marker shape...", "sws_ext_menu"), NamedCommandLookup("_BR_TEMPO_SHAPE_OPTIONS"));
 	AddToMenu(hTempoSubMenu, SWS_SEPARATOR, 0);
 	AddToMenu(hTempoSubMenu, __LOCALIZE("Help...", "sws_ext_menu"), NamedCommandLookup("_BR_TEMPO_HELP_WIKI"));
-
+/* over exceeded by the native track mgr
 	AddToMenu(hMenu, __LOCALIZE("Tracklist", "sws_ext_menu"), NamedCommandLookup("_SWSTL_OPEN"));
+*/
 	AddToMenu(hMenu, __LOCALIZE("Zoom preferences...", "sws_ext_menu"), NamedCommandLookup("_SWS_ZOOMPREFS"));
 
 	AddToMenu(hMenu, SWS_SEPARATOR, 0);
@@ -335,7 +336,8 @@ void SWSCreateExtensionsMenu(HMENU hMenu)
 	AddToMenu(hOptionsSubMenu, __LOCALIZE("Enable auto marker coloring", "sws_ext_menu"), NamedCommandLookup("_S&MAUTOCOLOR_MKR_ENABLE"));
 	AddToMenu(hOptionsSubMenu, __LOCALIZE("Enable auto region coloring", "sws_ext_menu"), NamedCommandLookup("_S&MAUTOCOLOR_RGN_ENABLE"));
 	AddToMenu(hOptionsSubMenu, __LOCALIZE("Enable auto track icon", "sws_ext_menu"), NamedCommandLookup("_S&MAUTOICON_ENABLE"));
-
+	AddToMenu(hOptionsSubMenu, __LOCALIZE("Enable auto track layout", "sws_ext_menu"), NamedCommandLookup("_S&MAUTOLAYOUT_ENABLE"));
+	AddToMenu(hOptionsSubMenu, SWS_SEPARATOR, 0);
 	AddToMenu(hOptionsSubMenu, __LOCALIZE("Enable marker actions", "sws_ext_menu"), NamedCommandLookup("_SWSMA_TOGGLE"));
 	AddToMenu(hOptionsSubMenu, __LOCALIZE("Enable record input check", "sws_ext_menu"), NamedCommandLookup("_SWS_TOGRECINCHECK"));
 	AddToMenu(hOptionsSubMenu, __LOCALIZE("Enable red ruler while recording", "sws_ext_menu"), NamedCommandLookup("_SWS_RECREDRULER"));

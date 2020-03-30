@@ -29,21 +29,24 @@
 #include "../SnM/SnM_Dlg.h"
 #include "../reaper/localize.h"
 #include "Parameters.h"
+#include "../SnM/SnM_Util.h"
 
 using namespace std;
 
+extern MTRand g_mtrand;
+
 void DoJumpEditCursorByRandomAmount(COMMAND_T*)
 {
-	double RandomMean;
-	RandomMean=g_command_params.EditCurRndMean;
-	double RandExp=-log((1.0/RAND_MAX)*rand()) * RandomMean;
+	double RandomMean = g_command_params.EditCurRndMean;
+	double RandExp=-log(g_mtrand.rand()) * RandomMean;
 	double NewCurPos=GetCursorPosition() + RandExp;
 	SetEditCurPos(NewCurPos, false, false);
 }
 
 void DoNudgeSelectedItemsPositions(bool UseConfig, bool Positive, double NudgeTime)
 {
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(0, i);
 		double NewPos;
@@ -196,7 +199,7 @@ void DoNudgeItemsRightBeatsAndConfBased(COMMAND_T*)
 
 void DoNudgeSamples(COMMAND_T* ct)
 {
-	double dSrate = (double)(*(int*)GetConfigVar("projsrate"));
+	double dSrate = (double)(*ConfigVar<int>("projsrate"));
 	for (int i = 1; i <= GetNumTracks(); i++)
 	{
 		MediaTrack* tr = CSurf_TrackFromID(i, false);
@@ -222,7 +225,7 @@ void DoSplitItemsAtTransients(COMMAND_T* ct)
 	bool ItemSelected=false;
 
 	int ItemCounter=0;
-	int numItems=CountSelectedMediaItems(NULL);
+	const int numItems=CountSelectedMediaItems(NULL);
 	MediaItem** MediaItemsInProject = new MediaItem*[numItems];
 	int i, j;
 	for (i=0;i<GetNumTracks();i++)
@@ -339,7 +342,7 @@ void DoNudgeTakeVols(bool UseConf,bool Positive,double TheNudgeAmount)
 	{
 		CurTake=ProjectTakes[i];
 		double NewVol;
-		double OldVol=*(double*)GetSetMediaItemTakeInfo(CurTake,"D_VOL",NULL);
+		double OldVol=abs(*(double*)GetSetMediaItemTakeInfo(CurTake,"D_VOL",NULL));
 		double OldVolDB=20*(log10(OldVol));
 		if (Positive)
 			NewVol=OldVolDB+NudgeAmount; else NewVol=OldVolDB-NudgeAmount;
@@ -347,6 +350,8 @@ void DoNudgeTakeVols(bool UseConf,bool Positive,double TheNudgeAmount)
 		if (NewVol>-144.0)
 			NewVolGain=exp(NewVol*0.115129254);
 			else NewVolGain=0;
+		if (IsTakePolarityFlipped(CurTake))
+			NewVolGain = -NewVolGain;
 		GetSetMediaItemTakeInfo(CurTake,"D_VOL",&NewVolGain);
 	}
 	Undo_OnStateChangeEx(__LOCALIZE("Nudge take volume","sws_undo"),4,-1);
@@ -366,7 +371,8 @@ void DoNudgeTakeVolsUp(COMMAND_T*)
 void DoResetItemVol(COMMAND_T* ct)
 {
 	double NewVol=1.0;
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 		GetSetMediaItemInfo(GetSelectedMediaItem(0, i), "D_VOL", &NewVol);
 	Undo_OnStateChangeEx(SWS_CMD_SHORTNAME(ct), UNDO_STATE_ITEMS, -1);
 	UpdateTimeline();
@@ -377,9 +383,13 @@ void DoResetTakeVol(COMMAND_T* ct)
 	vector<MediaItem_Take*> ProjectTakes;
 	XenGetProjectTakes(ProjectTakes,true,true);
 	int i;
-	double NewVol=1.0;
-	for (i=0;i<(int)ProjectTakes.size();i++)
-		GetSetMediaItemTakeInfo(ProjectTakes[i],"D_VOL",&NewVol);
+	double NewVol;
+	for (i = 0; i < (int)ProjectTakes.size(); i++)
+	{
+		MediaItem_Take* take = ProjectTakes[i];
+		IsTakePolarityFlipped(take) ? NewVol = -1.0 : NewVol = 1.0;
+		GetSetMediaItemTakeInfo(take, "D_VOL", &NewVol);
+	}
 	Undo_OnStateChangeEx(SWS_CMD_SHORTNAME(ct),4,-1);
 	UpdateTimeline();
 }
@@ -483,7 +493,7 @@ WDL_DLGRET ScaleItemPosDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lP
 #endif
 			SendMessage(hPosScaler,TBM_SETTIC,0,473);
 			SendMessage(hLenScaler,TBM_SETTIC,0,473);
-			char TextBuf[32];
+			char TextBuf[314];
 			sprintf(TextBuf,"%.2f",g_last_ScaleItemPosParams.dScaling);
 			SetDlgItemText(hwnd, IDC_EDIT1, TextBuf);
 			sprintf(TextBuf,"%.2f",g_last_ScaleItemPosParams.dLengthScaling);
@@ -494,7 +504,7 @@ WDL_DLGRET ScaleItemPosDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lP
 		}
         case WM_HSCROLL:
 		{
-			char TextBuf[128];
+			char TextBuf[314];
 			int SliderPos = (int)SendMessage((HWND)lParam, TBM_GETPOS, 0, 0);
 			double dPosScalFact = 10+((190.0/1000)*SliderPos);
 			if ((HWND)lParam == hPosScaler)
@@ -603,7 +613,8 @@ void DoRandomizePositions2(int obeyGroup)
 
 	if (obeyGroup == 0)
 	{
-		for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+		const int cnt=CountSelectedMediaItems(NULL);
+		for (int i = 0; i < cnt; i++)
 		{
 			MediaItem* mi = GetSelectedMediaItem(NULL, i);
 			double dItemPos = *(double*)GetSetMediaItemInfo(mi, "D_POSITION", NULL);
@@ -615,7 +626,9 @@ void DoRandomizePositions2(int obeyGroup)
 	else
 	{
 		WDL_TypedBuf <int> processed;
-		for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+		const int itemCount = CountMediaItems(NULL);
+		const int itemSelCount=CountSelectedMediaItems(NULL);
+		for (int i = 0; i < itemSelCount; i++)
 		{
 			MediaItem* mi = GetSelectedMediaItem(NULL, i);
 			double posDiff = -dSpread + (2.0/RAND_MAX)*rand()*dSpread;
@@ -623,7 +636,7 @@ void DoRandomizePositions2(int obeyGroup)
 
 			if (group != 0 && processed.Find(group) == -1)
 			{
-				for (int j = 0; j < CountMediaItems(NULL); j++)
+				for (int j = 0; j < itemCount; j++)
 				{
 					MediaItem* mi = GetMediaItem(NULL, j);
 					if (group == *(int*)GetSetMediaItemInfo(mi, "I_GROUPID", NULL))
@@ -659,7 +672,7 @@ WDL_DLGRET RandomizeItemPosDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARA
     {
         case WM_INITDIALOG:
 		{
-			char TextBuf[32];
+			char TextBuf[314];
 
 			sprintf(TextBuf,"%.2f",g_last_RandomizeItemPosParams.RandRange);
 			SetDlgItemText(hwnd, IDC_EDIT1, TextBuf);
@@ -704,195 +717,6 @@ void DoRandomizePositionsDlg(COMMAND_T*)
 
 	}
 	DialogBox(g_hInst, MAKEINTRESOURCE(IDD_RANDTEMPOS), g_hwndParent, RandomizeItemPosDlgProc);
-}
-
-typedef struct
-{
-	double TimeStep;
-	double TimeRand;
-	double MinValue;
-	double MaxValue;
-	double RndWalkSpread;
-	int PointShape;
-	int GenType;
-
-} t_auto_gen_params;
-
-t_auto_gen_params g_AutoGenParams;
-
-char *g_ClipBFullBuf=NULL;
-
-// TODO probably should fine-tooth this one
-void CreateAutomationData()
-{
-	char LineBuf[257];
-	if (!g_ClipBFullBuf)
-		g_ClipBFullBuf = new char[500001];
-	//memset(FullBuf,0,500001);
-	//memset(LineBuf,0,256);
-	int j=0;
-	strcpy(LineBuf, "<ENVPTS");
-	//
-	//strcat(FullBuf,LineBuf);
-
-	int Perse=(int)strlen(LineBuf);
-	int i=0;
-	for (i=0;i<Perse;i++) g_ClipBFullBuf[i]=LineBuf[i];
-
-	j=j+Perse;
-	g_ClipBFullBuf[j+1]='\0';
-	j++;
-	double TimeSelStart;
-	double TimeSelEnd;
-
-	GetSet_LoopTimeRange(false,false,&TimeSelStart,&TimeSelEnd,false);
-	SetEditCurPos(TimeSelStart,false,false);
-	double GenRange=TimeSelEnd-TimeSelStart;
-	int GenNumPoints=(int)floor(GenRange/g_AutoGenParams.TimeStep)+1;
-	for (i=0;i<GenNumPoints;i++)
-	{
-		double TimeRandRange=(g_AutoGenParams.TimeRand/100.0)*(g_AutoGenParams.TimeStep/2.0);
-		double TimeRandDelta=TimeRandRange+((1.0/RAND_MAX)*rand()*(TimeRandRange*2));
-		double PTTime=i*g_AutoGenParams.TimeStep+TimeRandDelta;
-		double PTValue;
-		if (g_AutoGenParams.GenType==0)
-		{
-			double RandRange=g_AutoGenParams.MaxValue-g_AutoGenParams.MinValue;
-			PTValue=g_AutoGenParams.MinValue+((1.0/RAND_MAX)*rand()*(RandRange));
-		}
-		int PTSel=0;
-		int PTShape=g_AutoGenParams.PointShape;
-		sprintf(LineBuf,"  PT %f %f %d %d",PTTime,PTValue,PTShape,PTSel);
-		Perse=(int)strlen(LineBuf);
-		int k;
-		for (k=0;k<Perse;k++)
-		{
-			g_ClipBFullBuf[j+k]=LineBuf[k];
-			//j++;
-		}
-		j=j+Perse;
-		g_ClipBFullBuf[j+1]='\0';
-		j++;
-		if (j>500000)
-			MessageBox(g_hwndParent, __LOCALIZE("Too much into clipboard buffer!","sws_mbox"), __LOCALIZE("Xenakios - Error","sws_mbox"), MB_OK);
-		//strncat(FullBuf,LineBuf,256);
-
-	}
-	strcpy(LineBuf,">");
-
-	Perse=(int)strlen(LineBuf);
-	//for (i=0;i<Perse;i++) FullBuf[i+j]=LineBuf[i];
-	g_ClipBFullBuf[j]='>';
-	//j=j+Perse;
-	g_ClipBFullBuf[j+1]='\0';
-	g_ClipBFullBuf[j+2]='\0';
-
-	//strncat(FullBuf,LineBuf,256);
-	//j=j+strlen(LineBuf)+1;
-
-	UINT rmformat = RegisterClipboardFormat("REAPERmedia");
-
-	if(OpenClipboard(g_hwndParent)>0)
-	{
-		//make some dummy data
-		HGLOBAL clipbuffer;
-		EmptyClipboard();
-		clipbuffer = GlobalAlloc(GMEM_MOVEABLE, j+2);
-		//char *buffer = (char*)GlobalLock(clipbuffer);
-		//GlobalLock(clipbuffer);
-		//put the data into that memory
-
-		//buffer = FullBuf;
-		memcpy(GlobalLock(clipbuffer),g_ClipBFullBuf,j+2);
-		//Put it on the clipboard
-
-		GlobalUnlock(clipbuffer);
-		SetClipboardData(rmformat,clipbuffer);
-		CloseClipboard();
-
-		//
-		Main_OnCommand(40058,0); // paste
-		GlobalFree(clipbuffer);
-		//delete buffer;
-	}
-}
-
-bool g_autogen_firstrun=true;
-
-WDL_DLGRET GenEnvesDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
-{
-	if (INT_PTR r = SNM_HookThemeColorsMessage(hwnd, Message, wParam, lParam))
-		return r;
-
-	switch(Message)
-    {
-        case WM_INITDIALOG:
-		{
-			char TextBuf[32];
-			sprintf(TextBuf,"%.2f",g_AutoGenParams.MaxValue);
-			SetDlgItemText(hwnd, IDC_EDIT1, TextBuf);
-			sprintf(TextBuf,"%.2f",g_AutoGenParams.MinValue);
-			SetDlgItemText(hwnd, IDC_EDIT2, TextBuf);
-			sprintf(TextBuf,"%.2f",1.0/g_AutoGenParams.TimeStep);
-			SetDlgItemText(hwnd, IDC_EDIT4, TextBuf);
-			sprintf(TextBuf,"%.2f",g_AutoGenParams.TimeRand);
-			SetDlgItemText(hwnd, IDC_EDIT5, TextBuf);
-			sprintf(TextBuf,"%d",g_AutoGenParams.PointShape);
-			SetDlgItemText(hwnd, IDC_EDIT3, TextBuf);
-			SetFocus(GetDlgItem(hwnd, IDC_EDIT2));
-			SendMessage(GetDlgItem(hwnd, IDC_EDIT2), EM_SETSEL, 0, -1);
-			return 0;
-		}
-        case WM_COMMAND:
-            switch(LOWORD(wParam))
-            {
-                case IDOK:
-				{
-					char textbuf[100];
-					GetDlgItemText(hwnd,IDC_EDIT1,textbuf,100);
-					g_AutoGenParams.MaxValue=atof(textbuf);
-					GetDlgItemText(hwnd,IDC_EDIT2,textbuf,100);
-					g_AutoGenParams.MinValue=atof(textbuf);
-					GetDlgItemText(hwnd,IDC_EDIT4,textbuf,100);
-					g_AutoGenParams.TimeStep=1.0/atof(textbuf);
-					GetDlgItemText(hwnd,IDC_EDIT3,textbuf,100);
-					g_AutoGenParams.PointShape=atoi(textbuf);
-					GetDlgItemText(hwnd,IDC_EDIT5,textbuf,100);
-					g_AutoGenParams.TimeRand=atof(textbuf);
-					CreateAutomationData();
-					EndDialog(hwnd,0);
-					return 0;
-				}
-				case IDCANCEL:
-				{
-					EndDialog(hwnd,0);
-					return 0;
-				}
-			}
-			break;
-	}
-	return 0;
-}
-
-void DoInsertRandomEnvelopePoints(COMMAND_T*)
-{
-	if (!g_ClipBFullBuf)
-		g_ClipBFullBuf=new char[500001];
-	if (g_autogen_firstrun)
-	{
-		g_autogen_firstrun=false;
-		g_AutoGenParams.GenType=0;
-		g_AutoGenParams.MinValue=0;
-		g_AutoGenParams.MaxValue=1;
-		g_AutoGenParams.PointShape=0;
-		g_AutoGenParams.RndWalkSpread=0.1;
-		g_AutoGenParams.TimeStep=0.5;
-		g_AutoGenParams.TimeRand=0.0;
-	}
-
-	DialogBox(g_hInst, MAKEINTRESOURCE(IDD_GEN_ENV1), g_hwndParent, GenEnvesDlgProc);
-	delete[] g_ClipBFullBuf;
-	g_ClipBFullBuf = NULL;
 }
 
 #define IDC_FIRSTMIXSTRIP 101
@@ -959,7 +783,16 @@ void On_SliderMove(HWND theHwnd,WPARAM wParam,LPARAM lParam,HWND SliderHandle,in
 		{
 			double NewVol=( 2.0/1000*TheSlipos);
 			if (CurTake)
-				GetSetMediaItemTakeInfo(CurTake,"D_VOL",&NewVol);
+			{
+				if (IsTakePolarityFlipped(CurTake))
+				{
+					if (TheSlipos == 0)
+						NewVol = -0.00000001; // trick to prevent polarity reset if take vol. is set to 0.0 (-inf)
+					else 
+						NewVol = -NewVol;
+				}
+				GetSetMediaItemTakeInfo(CurTake, "D_VOL", &NewVol);
+			}
 		}
 		if (movedParam==1)
 		{
@@ -983,7 +816,7 @@ void TakeMixerResetTakes(bool ResetVol=false,bool ResetPan=false)
 	for (int i = 0; i < GetMediaItemNumTakes(g_TargetItem); i++)
 	{
 		CurTake=GetMediaItemTake(g_TargetItem,i);
-		double NewVolume=1.0;
+		double NewVolume = IsTakePolarityFlipped(CurTake) ? -1.0 : 1.0;
 		double NewPan=0.0;
 		if (CurTake && ResetVol==true)
 			GetSetMediaItemTakeInfo(CurTake,"D_VOL",&NewVolume);
@@ -1095,7 +928,12 @@ WDL_DLGRET TakeMixerDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPara
 						CurTake=GetMediaItemTake(g_TargetItem,i);
 						double NewVol=g_TakeMixerState.StoredVolumes[i];
 						if (CurTake)
-							GetSetMediaItemTakeInfo(CurTake,"D_VOL",&NewVol);
+						{
+							if (IsTakePolarityFlipped(CurTake)) // we stored absolute value in DoShowTakeMixerDlg()
+								NewVol = -NewVol;
+							GetSetMediaItemTakeInfo(CurTake, "D_VOL", &NewVol);
+						}
+							
 						double NewPan=g_TakeMixerState.StoredPans[i];
 						if (CurTake)
 							GetSetMediaItemTakeInfo(CurTake,"D_PAN",&NewPan);
@@ -1156,7 +994,7 @@ void DoShowTakeMixerDlg(COMMAND_T*)
 	for (int i = 0; i < g_TakeMixerState.NumTakes; i++)
 	{
 		MediaItem_Take* CurTake = GetMediaItemTake(g_TargetItem, i);
-		g_TakeMixerState.StoredVolumes[i]= CurTake ? *(double*)GetSetMediaItemTakeInfo(CurTake,"D_VOL",NULL) : 0.0;
+		g_TakeMixerState.StoredVolumes[i]= CurTake ? abs(*(double*)GetSetMediaItemTakeInfo(CurTake,"D_VOL",NULL)) : 0.0;
 		g_TakeMixerState.StoredPans[i]= CurTake ? *(double*)GetSetMediaItemTakeInfo(CurTake,"D_PAN",NULL) : 0.0;
 	}
 
@@ -1382,7 +1220,7 @@ WDL_DLGRET TakeFinderDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPar
 			char labtxt[256];
 			SetFocus(GetDlgItem(hwnd, IDC_EDIT1));
 			SendMessage(GetDlgItem(hwnd, IDC_EDIT1), EM_SETSEL, 0, -1);
-			sprintf(labtxt,__LOCALIZE_VERFMT("Search from %d items","sws_DLG_130"),g_NumProjectItems);
+			snprintf(labtxt,sizeof(labtxt),__LOCALIZE_VERFMT("Search from %d items","sws_DLG_130"),g_NumProjectItems);
 			SetDlgItemText(hwnd,IDC_STATIC1,labtxt);
 			SetFocus(GetDlgItem(hwnd, IDC_EDIT1));
 			SendMessage(GetDlgItem(hwnd, IDC_EDIT1), EM_SETSEL, 0, -1);
@@ -1398,7 +1236,7 @@ WDL_DLGRET TakeFinderDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPar
 				if (len>0)
 				{
 					int NumMatches=PerformTakeSearch(labtxt);
-					sprintf(labtxt,__LOCALIZE_VERFMT("Found %d matching items","sws_DLG_130"),NumMatches);
+					snprintf(labtxt,sizeof(labtxt),__LOCALIZE_VERFMT("Found %d matching items","sws_DLG_130"),NumMatches);
 					SetDlgItemText(hwnd,IDC_STATIC1,labtxt);
 					if (NumMatches>0)
 					{

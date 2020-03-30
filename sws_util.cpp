@@ -1,7 +1,7 @@
 /******************************************************************************
 / sws_util.cpp
 /
-/ Copyright (c) 2010 Tim Payne (SWS)
+/ Copyright (c) 2010 and later Tim Payne (SWS), Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -28,7 +28,7 @@
 
 #include "stdafx.h"
 #include "Breeder/BR_Util.h"
-#include "../WDL/sha.h"
+#include "WDL/sha.h"
 #include "reaper/localize.h"
 
 // Globals
@@ -39,6 +39,7 @@ int  g_i2 = 2;
 bool g_bTrue  = true;
 bool g_bFalse = false;
 MTRand g_MTRand;
+extern double g_runningReaVer; // SnM_Project.cpp/GlobalStartupActionTimer()
 #ifndef _WIN32
 const GUID GUID_NULL = { 0, 0, 0, "\0\0\0\0\0\0\0" };
 #endif
@@ -83,7 +84,7 @@ void SaveWindowPos(HWND hwnd, const char* cKey)
 	char str[256];
 	RECT r;
 	GetWindowRect(hwnd, &r);
-	sprintf(str, "%d %d %d %d", r.left, r.top, r.right - r.left, r.bottom - r.top);
+	sprintf(str, "%d %d %d %d", (int)r.left, (int)r.top, (int)(r.right-r.left), (int)(r.bottom-r.top));
 	WritePrivateProfileString(SWS_INI, cKey, str, get_ini_file());
 }
 
@@ -131,7 +132,7 @@ void SWS_ShowTextScrollbar(HWND hwnd, bool show)
 	SetWindowLong(hwnd, GWL_STYLE, dwStyle);
 }
 
-#elif defined(__APPLE__)
+#else
 
 int GetMenuString(HMENU hMenu, UINT uIDItem, char* lpString, int nMaxCount, UINT uFlag)
 {
@@ -274,7 +275,7 @@ int GetTrackVis(MediaTrack* tr) // &1 == mcp, &2 == tcp
 {
 	int iTrack = CSurf_TrackToID(tr, false);
 	if (iTrack == 0)
-		return *(int*)GetConfigVar("showmaintrack") ? 3 : 1; // For now, always return master vis in MCP
+		return *ConfigVar<int>("showmaintrack") ? 3 : 1; // For now, always return master vis in MCP
 	else if (iTrack < 0)
 		return 0;
 
@@ -288,7 +289,7 @@ void SetTrackVis(MediaTrack* tr, int vis) // &1 == mcp, &2 == tcp
 	int iTrack = CSurf_TrackToID(tr, false);
 	if (iTrack == 0)
 	{	// TODO - obey master in mcp
-		if ((vis & 2) != (*(int*)GetConfigVar("showmaintrack") ? 2 : 0))
+		if ((vis & 2) != (*ConfigVar<int>("showmaintrack") ? 2 : 0))
 			Main_OnCommand(40075, 0);
 	}
 	else if (iTrack > 0)
@@ -301,21 +302,6 @@ void SetTrackVis(MediaTrack* tr, int vis) // &1 == mcp, &2 == tcp
 	}
 }
 
-void* GetConfigVar(const char* cVar)
-{
-	int sztmp;
-	void* p = NULL;
-	if (int iOffset = projectconfig_var_getoffs(cVar, &sztmp))
-	{
-		p = projectconfig_var_addr(EnumProjects(-1, NULL, 0), iOffset);
-	}
-	else
-	{
-		p = get_config_var(cVar, &sztmp);
-	}
-	return p;
-}
-
 HWND GetTrackWnd()
 {
 	return GetArrangeWnd(); // BR: will take care of any localization issues
@@ -324,19 +310,6 @@ HWND GetTrackWnd()
 HWND GetRulerWnd()
 {
 	return GetRulerWndAlt(); // BR: will take care of any localization issues
-}
-
-// Output string must be 41 bytes minimum.  out is returned as a convenience.
-char* GetHashString(const char* in, char* out)
-{
-	WDL_SHA1 sha;
-	sha.add(in, (int)strlen(in));
-	char hash[20];
-	sha.result(hash);
-	for (int i = 0; i < 20; i++)
-		sprintf(out + i*2, "%02X", (unsigned char)(hash[i] & 0xFF));
-	out[40] = 0;
-	return out;
 }
 
 // overrides the native GetTrackGUID(): returns a special GUID for the master track
@@ -399,26 +372,29 @@ const char *stristr(const char* a, const char* b)
 }
 
 #ifdef _WIN32
-wchar_t* WideCharPlz(const char* inChar)
-{
-	DWORD dwNum = MultiByteToWideChar(CP_UTF8, 0, inChar, -1, NULL, 0);
-	wchar_t *wChar;
-	wChar = new wchar_t[ dwNum ];
-	MultiByteToWideChar(CP_UTF8, 0, inChar, -1, wChar, dwNum );
-	return wChar;
-}
-
 void dprintf(const char* format, ...)
 {
-    va_list args;
-    va_start(args, format);
-    int len = _vscprintf(format, args) + 1;
-    char* buffer = new char[len];
+	va_list args;
+	va_start(args, format);
+	int len = _vscprintf(format, args) + 1;
+	char* buffer = new char[len];
 	vsprintf_s(buffer, len, format, args); // C4996
-    OutputDebugString(buffer);
+	OutputDebugString(buffer);
 	delete[] buffer;
 }
 #endif
+
+void SWS_GetAllTracks(WDL_TypedBuf<MediaTrack*>* buf, bool bMaster)
+{
+	buf->Resize(0);
+	for (int i = (bMaster ? 0 : 1); i <= GetNumTracks(); i++)
+	{
+		MediaTrack* tr = CSurf_TrackFromID(i, false);
+		int pos = buf->GetSize();
+		buf->Resize(pos + 1);
+		buf->Get()[pos] = tr;
+	}
+}
 
 void SWS_GetSelectedTracks(WDL_TypedBuf<MediaTrack*>* buf, bool bMaster)
 {
@@ -508,8 +484,6 @@ bool SWS_IsWindow(HWND hwnd)
 #endif
 }
 
-
-
 // Localization
 WDL_FastString* g_LangPack = NULL;
 
@@ -538,7 +512,8 @@ WDL_FastString* GetLangPack()
 	return g_LangPack;
 }
 
-bool IsLocalized() {
+bool IsLocalized()
+{
 #ifdef _SWS_LOCALIZATION
 	return (GetLangPack()->GetLength() > 0);
 #else
@@ -567,4 +542,14 @@ TrackEnvelope* SWS_GetTakeEnvelopeByName(MediaItem_Take* take, const char* envna
 }
 TrackEnvelope* SWS_GetTrackEnvelopeByName(MediaTrack* track, const char* envname) {
 	return GetTrackEnvelopeByName(track,  __localizeFunc(envname, "envname", 0));
+}
+
+void UpdateStretchMarkersAfterSetTakeStartOffset(MediaItem_Take* take, double takeStartOffset_multiplyPlayrate)
+{
+	for (int i = 0; i < GetTakeNumStretchMarkers(take); i++) {
+		double posOut;
+		GetTakeStretchMarker(take, i, &posOut, NULL);
+		SetTakeStretchMarker(take, i, posOut + takeStartOffset_multiplyPlayrate, NULL);
+	}
+	UpdateItemInProject(GetMediaItemTake_Item(take));
 }

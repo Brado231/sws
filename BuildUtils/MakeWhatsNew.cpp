@@ -32,8 +32,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include "../../WDL/ptrlist.h"
-#include "../../WDL/wdlstring.h"
+#include <WDL/ptrlist.h>
+#include <WDL/wdlstring.h>
 
 class IntStack
 {
@@ -127,7 +127,7 @@ int GenHtmlWhatsNew(const char* fnIn, const char* fnOut, bool bFullHTML, const c
 	{
 		fputs("<!DOCTYPE html >\n", pOut);
 		fputs("<html lang=\"en\">\n", pOut);
-		fputs("<head><meta charset=\"utf-8\"><title>SWS/S&M Extension - What's new?</title></head>\n", pOut);
+		fputs("<head><meta charset=\"utf-8\"><title>SWS/S&amp;M Extension - What's new?</title></head>\n", pOut);
 		fputs("<body>\n<h1>", pOut);
 		if (_url)
 		{
@@ -135,7 +135,7 @@ int GenHtmlWhatsNew(const char* fnIn, const char* fnOut, bool bFullHTML, const c
 			fputs(_url, pOut);
 			fputs("\">", pOut);
 		}
-		fputs("SWS/S&M Extension", pOut);
+		fputs("SWS/S&amp;M Extension", pOut);
 		if (_url)
 		{
 			fputs("</a>", pOut);
@@ -194,7 +194,7 @@ int GenHtmlWhatsNew(const char* fnIn, const char* fnOut, bool bFullHTML, const c
 				int iIssue = atol(&cBuf[iPos+6]);
 				if (iIssue != 0)
 				{
-					fprintf(pOut, "<a href=\"https://github.com/Jeff0S/sws/issues/%d\">%cssue %d</a>", iIssue, cBuf[iPos], iIssue);
+					fprintf(pOut, "<a href=\"https://github.com/reaper-oss/sws/issues/%d\">%cssue %d</a>", iIssue, cBuf[iPos], iIssue);
 					iPos += 6;
 					while (isalnum(cBuf[iPos++]));
 					iPos--;
@@ -278,12 +278,27 @@ int GenHtmlWhatsNew(const char* fnIn, const char* fnOut, bool bFullHTML, const c
 				}
 			}
 		}
+		// Special cases for <strong></strong>
+		else if (_strnicmp(&cBuf[iPos], "<strong>", 8) == 0)
+		{
+			fputs("<strong>", pOut);
+			iPos += 7;
+		}
+		else if (_strnicmp(&cBuf[iPos], "</strong>", 9) == 0)
+		{
+			fputs("</strong>", pOut);
+			iPos += 8;
+		}
 		else // "Default" case, just write out the character
 		{
-			if (cBuf[iPos] == '\"') // Replace quotes with &quot;
+			if (cBuf[iPos] == '\"')
 				fputs("&quot;", pOut);
-			else if (cBuf[iPos] == '&') // Replace & with &amp;
+			else if (cBuf[iPos] == '&')
 				fputs("&amp;", pOut);
+			else if (cBuf[iPos] == '>')
+				fputs("&gt;", pOut);
+			else if (cBuf[iPos] == '<')
+				fputs("&lt;", pOut);
 			else if (cBuf[iPos] == ' ' && cBuf[iPos+1] == ' ')
 				fputs("&nbsp;", pOut);
 			else

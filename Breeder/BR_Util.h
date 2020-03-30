@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2013-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -83,7 +83,6 @@ double AltAtof (char* str);
 bool IsFraction (char* str, double& convertedFraction);
 void ReplaceAll (string& str, string oldStr, string newStr);
 void AppendLine (WDL_FastString& str, const char* line);
-void AdvanceBySecond (int direction, int& hours, int& minutes, int& seconds);
 const char* strstr_last (const char* haystack, const char* needle);
 template <typename T> bool WritePtr (T* ptr, T val)  {if (ptr){*ptr = val; return true;} return false;}
 template <typename T> bool ReadPtr  (T* ptr, T& val) {if (ptr){val = *ptr; return true;} return false;}
@@ -107,7 +106,6 @@ double EndOfProject (bool markers, bool regions);
 double GetMidiOscVal (double min, double max, double step, double currentVal, int commandVal, int commandValhw, int commandRelmode);
 double GetPositionFromTimeInfo (int hours, int minutes, int seconds, int frames);
 void GetTimeInfoFromPosition (double position, int* hours, int* minutes, int* seconds, int* frames);
-void AdvanceByFrame (int direction, int& hours, int& minutes, int& seconds, int& frames);
 void GetSetLastAdjustedSend (bool set, MediaTrack** track, int* sendId, BR_EnvType* type);
 void GetSetFocus (bool set, HWND* hwnd, int* context);
 void SetAllCoordsToZero (RECT* r);
@@ -118,8 +116,6 @@ bool IsPaused (ReaProject* proj);
 bool IsRecording (ReaProject* proj);
 bool AreAllCoordsZero (RECT& r);
 PCM_source* DuplicateSource (PCM_source* source); // if the option "Toggle pooled (ghost) MIDI source data when copying media items", using PCM_source->Duplicate() will pool original and new source...use this function to escape this when necessary
-template <typename T> void GetConfig (const char* key, T& val) {val = *static_cast<T*>(GetConfigVar(key));}
-template <typename T> void SetConfig (const char* key, T  val) {*static_cast<T*>(GetConfigVar(key)) = val;}
 
 /******************************************************************************
 * Tracks                                                                      *
@@ -143,7 +139,15 @@ int GetTakeFXCount (MediaItem_Take* take);
 bool GetMidiTakeTempoInfo (MediaItem_Take* take, bool* ignoreProjTempo, double* bpm, int* num, int* den);
 bool SetIgnoreTempo (MediaItem* item, bool ignoreTempo, double bpm, int num, int den, bool skipItemsWithSameIgnoreState);
 bool DoesItemHaveMidiEvents (MediaItem* item);
-bool TrimItem (MediaItem* item, double start, double end, bool force = false);
+
+// NF: fix #950
+// added bool adjustTakesEnvelopes (if true, DoAdjustTakesEnvelopes() is called in TrimItem()
+bool TrimItem (MediaItem* item, double start, double end, bool adjustTakesEnvelopes, bool force = false);
+// use trim actions rather than API to avoid take env's + stretch markers offset
+bool TrimItem_UseNativeTrimActions(MediaItem* item, double start, double end, bool force = false);
+// adjust takes env's after trimming item to prevent offset
+void DoAdjustTakesEnvelopes(MediaItem_Take* take, double offset); 
+
 bool GetMediaSourceProperties (MediaItem_Take* take, bool* section, double* start, double* length, double* fade, bool* reverse);
 bool SetMediaSourceProperties (MediaItem_Take* take, bool section, double start, double length, double fade, bool reverse);
 bool SetTakeSourceFromFile (MediaItem_Take* take, const char* filename, bool inProjectData, bool keepSourceProperties);
@@ -241,14 +245,14 @@ HWND GetTransportWnd ();
 HWND GetMixerWnd ();
 HWND GetMixerMasterWnd ();
 HWND GetMediaExplorerWnd ();
-HWND GetMcpWnd ();
-HWND GetTcpWnd ();
-HWND GetTcpTrackWnd (MediaTrack* track);
+HWND GetMcpWnd (bool &isContainer);
+HWND GetTcpWnd (bool &isContainer);
+HWND GetTcpTrackWnd (MediaTrack* track, bool &isContainer);
 HWND GetNotesView (HWND midiEditor);
 HWND GetPianoView (HWND midiEditor);
 HWND GetTrackView (HWND midiEditor);
-MediaTrack* HwndToTrack (HWND hwnd, int* hwndContext);  // context: 0->unknown, 1->TCP, 2->MCP (works even if hwnd is not a track but something else in mcp/tcp)
-TrackEnvelope* HwndToEnvelope (HWND hwnd);
+MediaTrack* HwndToTrack (HWND hwnd, int* hwndContext, POINT ptScreen);  // context: 0->unknown, 1->TCP, 2->MCP (works even if hwnd is not a track but something else in mcp/tcp). 
+TrackEnvelope* HwndToEnvelope (HWND hwnd, POINT ptScreen);
 void CenterDialog (HWND hwnd, HWND target, HWND zOrder);
 void GetMonitorRectFromPoint (const POINT& p, bool workingAreaOnly, RECT* monitorRect);
 void GetMonitorRectFromRect (const RECT& r, bool workingAreaOnly, RECT* monitorRect);
@@ -289,6 +293,7 @@ enum BR_MouseCursor
 	CURSOR_ZOOM_IN,
 	CURSOR_ZOOM_OUT,
 	CURSOR_ZOOM_UNDO,
+	CURSOR_ERASER,
 
 	CURSOR_COUNT
 };

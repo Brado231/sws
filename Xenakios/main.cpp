@@ -34,16 +34,17 @@
 
 using namespace std;
 
-int *ShuffledNumbers;
-int ShuffledNumbersGenerated=0;
+extern MTRand g_mtrand;
 
-int IsRippleOneTrack(COMMAND_T*) { return *(int*)GetConfigVar("projripedit") == 1; }
-int IsRippleAll(COMMAND_T*)      { return *(int*)GetConfigVar("projripedit") == 2; }
+std::vector<int> g_ShuffledNumbers;
+int g_ShuffledNumbersGenerated=0;
+
+int IsRippleOneTrack(COMMAND_T*) { return *ConfigVar<int>("projripedit") == 1; }
+int IsRippleAll(COMMAND_T*)      { return *ConfigVar<int>("projripedit") == 2; }
 
 void DoToggleRippleOneTrack(COMMAND_T*)
 {
-	int* ripplemode = (int*)GetConfigVar("projripedit");
-	if (ripplemode)
+	if (const ConfigVar<int> ripplemode = "projripedit")
 	{
 		if (*ripplemode == 1)
 			Main_OnCommand(40309, 0);
@@ -54,8 +55,7 @@ void DoToggleRippleOneTrack(COMMAND_T*)
 
 void DoToggleRippleAll(COMMAND_T*)
 {
-	int* ripplemode = (int*)GetConfigVar("projripedit");
-	if (ripplemode)
+	if (const ConfigVar<int> ripplemode = "projripedit")
 	{
 		if (*ripplemode == 2)
 			Main_OnCommand(40309, 0);
@@ -64,29 +64,27 @@ void DoToggleRippleAll(COMMAND_T*)
 	}
 }
 
-bool GenerateShuffledRandomTable(int *IntTable,int numItems,int badFirstNumber)
+bool GenerateShuffledRandomTable(std::vector<int>& IntTable,int numItems,int badFirstNumber)
 {
-	int *CheckTable=new int[1024];
-	bool GoodFound=FALSE;
+	std::vector<int> CheckTable(1024);
+	bool GoodFound=false;
 	int IterCount=0;
-	int rndInt;
-	int i;
-	for (i=0;i<1024;i++)
+	int rndInt=0;
+	for (int i=0;i<1024;i++)
 	{
 		CheckTable[i]=0;
 		IntTable[i]=0;
 	}
-
-	for (i=0;i<numItems;i++)
+	for (int i=0;i<numItems;i++)
 	{
-		GoodFound=FALSE;
+		GoodFound=false;
 		while (!GoodFound)
 		{
-			rndInt=rand() % numItems;
+			rndInt=g_mtrand.randInt() % numItems;
 			if ((CheckTable[rndInt]==0) && (rndInt!=badFirstNumber) && (i==0))
-				GoodFound=TRUE;
+				GoodFound=true;
 			if ((CheckTable[rndInt]==0) && (i>0))
-				GoodFound=TRUE;
+				GoodFound=true;
 
 			IterCount++;
 			if (IterCount>10000000)
@@ -98,8 +96,7 @@ bool GenerateShuffledRandomTable(int *IntTable,int numItems,int badFirstNumber)
 			CheckTable[rndInt]=1;
 		}
 	}
-	delete[] CheckTable;
-	return FALSE;
+	return false; // UGH, why does this always return false???
 }
 
 void DoSelectFiles(COMMAND_T*)
@@ -107,36 +104,39 @@ void DoSelectFiles(COMMAND_T*)
 	char* cFiles = BrowseForFiles(__LOCALIZE("Select files","sws_mbox"), NULL, NULL, true, "WAV Files\0*.wav\0");
 	if (cFiles)
 	{
-		g_filenames->Empty(true, free);
+		g_filenames.clear();
 		char* pStr = cFiles;
 		while(*pStr)
 		{
-			strcpy(g_filenames->Add((char*)malloc(strlen(pStr)+1)), pStr);
+			g_filenames.push_back(pStr);
 			pStr += strlen(pStr)+1;
 		}
 		free(cFiles);
 	}
-	ShuffledNumbersGenerated=0;
-	GenerateShuffledRandomTable(ShuffledNumbers,g_filenames->GetSize(),-1);
+	g_ShuffledNumbersGenerated=0;
+	GenerateShuffledRandomTable(g_ShuffledNumbers,g_filenames.size(),-1);
 }
 
 void DoInsertRandom(COMMAND_T*)
 {
-	if (g_filenames->GetSize()>0)
-		InsertMedia(g_filenames->Get(rand() % g_filenames->GetSize()), 0);
+	// Using % to limit the random number isn't really correct. Should use the MTRand method
+	// to get a rand int from a range, but should ensure first what is the actual range it will
+	// return since we don't want to be indexing outside the array/list bounds
+	if (g_filenames.size()>0)
+		InsertMedia(g_filenames[g_mtrand.randInt() % g_filenames.size()].c_str(), 0);
 }
 
 void DoInsRndFileEx(bool RndLen,bool RndOffset,bool UseTimeSel)
 {
-	if (g_filenames->GetSize()>0)
+	if (g_filenames.size()>0)
 	{
-		int filenameindex=rand() % g_filenames->GetSize();
+		int filenameindex=g_mtrand.randInt() % g_filenames.size();
 
 		t_vect_of_Reaper_tracks TheTracks;
 		XenGetProjectTracks(TheTracks,true);
 		if (TheTracks.size()>0)
 		{
-			PCM_source *NewPCM=PCM_Source_CreateFromFile(g_filenames->Get(filenameindex));
+			PCM_source *NewPCM=PCM_Source_CreateFromFile(g_filenames[filenameindex].c_str());
 			if (!NewPCM)
 				return;
 
@@ -150,10 +150,11 @@ void DoInsRndFileEx(bool RndLen,bool RndOffset,bool UseTimeSel)
 			double MediaOffset=0.0;
 			if (RndOffset)
 			{
-				MediaOffset=(NewPCM->GetLength()/RAND_MAX)*rand();
+				MediaOffset=NewPCM->GetLength()*g_mtrand.rand();
 				ItemLen-=MediaOffset;
 			}
-			if (RndLen) ItemLen=((NewPCM->GetLength()-MediaOffset)/RAND_MAX)*rand();
+			if (RndLen)
+				ItemLen = (NewPCM->GetLength() - MediaOffset)*g_mtrand.rand();
 			if (UseTimeSel) ItemLen=TimeSelEnd-TimeSelStart;
 			if (!UseTimeSel) ItemPos=GetCursorPosition();
 			GetSetMediaItemTakeInfo(NewTake,"P_SOURCE",NewPCM);
@@ -191,7 +192,8 @@ void DoInsRndFileRndOffsetAtTimeSel(COMMAND_T*)
 
 void DoRoundRobinSelectTakes(COMMAND_T* ct)
 {
-	for (int i = 0; i < CountSelectedMediaItems (NULL); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		int takeId = *(int*)GetSetMediaItemInfo(item,"I_CURTAKE",NULL);
@@ -208,24 +210,20 @@ void DoRoundRobinSelectTakes(COMMAND_T* ct)
 
 void DoSelectTakeInSelectedItems(int takeIndx) // -1 first -2 last take, otherwise index, if bigger than numtakes in item, the last
 {
-	MediaTrack* CurTrack;
-	MediaItem* CurItem;
-	bool ItemSelected;
-	int numItems;
-	int numTakes;
-	int trackID;
-	int itemID;
-	for (trackID=0;trackID<GetNumTracks();trackID++)
+	MediaTrack* CurTrack=NULL;
+	MediaItem* CurItem=NULL;
+	bool ItemSelected=false;
+	for (int trackID=0;trackID<GetNumTracks();trackID++)
 	{
 		CurTrack=CSurf_TrackFromID(trackID+1,FALSE);
-		numItems=GetTrackNumMediaItems(CurTrack);
-		for (itemID=0;itemID<numItems;itemID++)
+		int numItems=GetTrackNumMediaItems(CurTrack);
+		for (int itemID=0;itemID<numItems;itemID++)
 		{
 			CurItem = GetTrackMediaItem(CurTrack,itemID);
 			ItemSelected=*(bool*)GetSetMediaItemInfo(CurItem,"B_UISEL",NULL);
 			if (ItemSelected==TRUE)
 			{
-				numTakes=GetMediaItemNumTakes(CurItem);
+				int numTakes=GetMediaItemNumTakes(CurItem);
 				if (numTakes>0)
 				{
 					int TakeToSelect;
@@ -258,17 +256,17 @@ void DoSelectLastTakesInItems(COMMAND_T* ct)
 
 void DoInsertShuffledRandomFile(COMMAND_T*)
 {
-	if (g_filenames->GetSize()>2)
+	if (g_filenames.size()>2)
 	{
-	 int FileToChoose=ShuffledNumbers[ShuffledNumbersGenerated];
-	 char* filename;
-	 filename=g_filenames->Get(FileToChoose);
+	 int FileToChoose=g_ShuffledNumbers[g_ShuffledNumbersGenerated];
+	 char* filename=nullptr;
+	 filename=(char*)g_filenames[FileToChoose].c_str();
 	 InsertMedia(filename,0);
-	 ShuffledNumbersGenerated++;
-	 if (ShuffledNumbersGenerated==g_filenames->GetSize())
+	 g_ShuffledNumbersGenerated++;
+	 if (g_ShuffledNumbersGenerated==g_filenames.size())
 	 {
-		GenerateShuffledRandomTable(ShuffledNumbers,g_filenames->GetSize(),FileToChoose);
-		ShuffledNumbersGenerated=0;
+		GenerateShuffledRandomTable(g_ShuffledNumbers,g_filenames.size(),FileToChoose);
+		g_ShuffledNumbersGenerated=0;
 	 }
 	}
 	else
@@ -276,12 +274,15 @@ void DoInsertShuffledRandomFile(COMMAND_T*)
 
 }
 
-bool ItemTimesCompFunc(MediaItem* ita,MediaItem* itb)
+struct ItemTimesCompFunc
 {
-	double itapos=*(double*)GetSetMediaItemInfo(ita,"D_POSITION",0);
-	double itbpos=*(double*)GetSetMediaItemInfo(itb,"D_POSITION",0);
-	return itapos<itbpos;
-}
+	bool operator()(MediaItem* ita, MediaItem* itb) const
+	{
+		double itapos = *(double*)GetSetMediaItemInfo(ita, "D_POSITION", 0);
+		double itbpos = *(double*)GetSetMediaItemInfo(itb, "D_POSITION", 0);
+		return itapos<itbpos;
+	}
+};
 
 double g_FirstSelectedItemPos;
 double g_LastSelectedItemEnd;
@@ -293,7 +294,7 @@ void DoSetLoopPointsToSelectedItems(bool SetTheLoop)
 	if (selitems.size()>0)
 	{
 		double MinItemPos,MaxItemEnd=0.0;
-		sort(selitems.begin(),selitems.end(),ItemTimesCompFunc);
+		sort(selitems.begin(),selitems.end(),ItemTimesCompFunc());
 		MinItemPos=*(double*)GetSetMediaItemInfo(selitems[0],"D_POSITION",0);
 		double MaxItemPos=*(double*)GetSetMediaItemInfo(selitems[selitems.size()-1],"D_POSITION",0);
 		MaxItemEnd=MaxItemPos+*(double*)GetSetMediaItemInfo(selitems[selitems.size()-1],"D_LENGTH",0);
@@ -411,16 +412,16 @@ void DoPlayItemsOnce(COMMAND_T*)
 
 void DoMoveCurNextTransMinusFade(COMMAND_T*)
 {
-	int sz=0; double *defFadeLen = (double *)get_config_var("deffadelen",&sz);
+	const double defFadeLen = *ConfigVar<double>("deffadelen");
 	static double prevCurPos = -666.0;
 	double CurPos=GetCursorPosition();
 	if (CurPos==prevCurPos)
 	{
-		CurPos=GetCursorPosition()+*defFadeLen;
+		CurPos=GetCursorPosition()+defFadeLen;
 		SetEditCurPos(CurPos,false,false);
 	}
 	Main_OnCommand(40375,0);
-	CurPos=GetCursorPosition()-*defFadeLen;
+	CurPos=GetCursorPosition()-defFadeLen;
 	SetEditCurPos(CurPos,false,false);
 	prevCurPos=CurPos;
 }
@@ -441,6 +442,7 @@ static preview_register_t g_ItemPreview = { {}, 0, };
 static bool g_itemPreviewPlaying = false;
 static bool g_itemPreviewPaused = false;
 static bool g_itemPreviewSendCC123 = false;
+static ReaProject *g_itemPreviewProject = NULL;
 
 void ItemPreviewTimer()
 {
@@ -499,7 +501,7 @@ void ItemPreview(int mode, MediaItem* item, MediaTrack* track, double volume, do
 	{
 		if (g_ItemPreview.preview_track)
 		{
-			StopTrackPreview(&g_ItemPreview);
+			StopTrackPreview2(g_itemPreviewProject, &g_ItemPreview);
 			if (g_itemPreviewSendCC123)
 				SendAllNotesOff((MediaTrack*)g_ItemPreview.preview_track);
 		}
@@ -561,17 +563,18 @@ void ItemPreview(int mode, MediaItem* item, MediaTrack* track, double volume, do
 
 			// Pause before preview otherwise ItemPreviewPlayState will stop it
 			g_itemPreviewPaused = pauseDuringPrev;
-			if (g_itemPreviewPaused && (GetPlayStateEx(NULL)&1) == 1 && (GetPlayStateEx(NULL)&2) != 1)
+			if (g_itemPreviewPaused && GetPlayState() & 1)
 				OnPauseButton();
 
 			if (g_ItemPreview.preview_track)
 			{
 				if (isMidi)
 					g_itemPreviewSendCC123 = true;
-				g_itemPreviewPlaying = !!PlayTrackPreview2Ex(NULL, &g_ItemPreview, (measureSync) ? (1) : (0), measureSync);
+				g_itemPreviewProject = EnumProjects(-1, NULL, 0);
+				g_itemPreviewPlaying = !!PlayTrackPreview2Ex(g_itemPreviewProject, &g_ItemPreview, !!measureSync, measureSync);
 			}
 			else
-				g_itemPreviewPlaying = !!PlayPreviewEx(&g_ItemPreview, (measureSync) ? (1) : (0), measureSync);
+				g_itemPreviewPlaying = !!PlayPreviewEx(&g_ItemPreview, !!measureSync, measureSync);
 
 			if (g_itemPreviewPlaying)
 				plugin_register("timer",(void*)ItemPreviewTimer);
@@ -647,9 +650,9 @@ void DoRenameMarkersWithAscendingNumbers(COMMAND_T* ct)
 {
 	int x=0;
 
-	bool isrgn;
-	double pos, rgnend;
-	int number, color;
+	bool isrgn = false;
+	double pos, rgnend = 0.0;
+	int number, color = 0;
 	char newmarkname[100];
 	int j=1;
 	while ((x = EnumProjectMarkers3(NULL, x, &isrgn, &pos, &rgnend, NULL, &number, &color)))
@@ -666,10 +669,7 @@ void DoRenameMarkersWithAscendingNumbers(COMMAND_T* ct)
 
 void DoSetStopAtEndOfTimeSel(int enabled) // -1 toggle 0 unset 1 set
 {
-	// stopendofloop
-	int sz=0;
-	int *stopatend = (int *)get_config_var("stopendofloop",&sz);
-	if (stopatend)
+	if (ConfigVar<int> stopatend = "stopendofloop")
 	{
 		if (enabled==-1)
 		{
@@ -683,7 +683,7 @@ void DoSetStopAtEndOfTimeSel(int enabled) // -1 toggle 0 unset 1 set
 	}
 }
 
-int IsStopAtEndOfTimeSel(COMMAND_T*) { return *(int*)GetConfigVar("stopendofloop") ? true : false; }
+int IsStopAtEndOfTimeSel(COMMAND_T*) { return *ConfigVar<int>("stopendofloop") ? true : false; }
 
 void DoToggleSTopAtEndOfTimeSel(COMMAND_T*)
 {
@@ -706,8 +706,9 @@ void XenakiosExit()
 	plugin_register("-timer", (void*)PlayItemsOnceTimer);
 	plugin_register("-timer",(void*)ItemPreviewTimer);
 	RemoveUndoKeyUpHandler01();
-	DestroyWindow(g_hItemInspector);
-  g_hItemInspector=NULL;
+
+	if (g_hItemInspector) 
+		DestroyWindow(g_hItemInspector);
 }
 
 int XenakiosInit()
@@ -716,19 +717,17 @@ int XenakiosInit()
 		return 0;
 	// Move Xenakios_commands.ini to a new location
 	char oldIniFilename[BUFFER_SIZE], iniFilename[BUFFER_SIZE];
-	_snprintf(oldIniFilename, BUFFER_SIZE, XEN_INIFILE_OLD, GetExePath()); // old location
-	_snprintf(iniFilename, BUFFER_SIZE, XEN_INIFILE_NEW, GetResourcePath());
+	snprintf(oldIniFilename, BUFFER_SIZE, XEN_INIFILE_OLD, GetExePath()); // old location
+	snprintf(iniFilename, BUFFER_SIZE, XEN_INIFILE_NEW, GetResourcePath());
 	if (FileExists(oldIniFilename))
 		MoveFile(oldIniFilename, iniFilename);
 	g_XenIniFilename.Set(iniFilename);
 
-	ShuffledNumbers=new int[1024];
+	g_ShuffledNumbers.resize(1024);
 
 	SWSRegisterCommands(g_XenCommandTable);
 
 	InitCommandParams();
-
-	g_filenames = new(WDL_PtrList<char>);
 
 	InitUndoKeyUpHandler01();
 	g_hItemInspector = CreateDialog(g_hInst, MAKEINTRESOURCE(IDD_ITEM_INSPECTOR), g_hwndParent, (DLGPROC)MyItemInspectorDlgProc);
@@ -739,7 +738,7 @@ int XenakiosInit()
 
 	// Add track template actions
 	char cPath[BUFFER_SIZE];
-	_snprintf(cPath, BUFFER_SIZE, "%s%cTrackTemplates", GetResourcePath(), PATH_SLASH_CHAR);
+	snprintf(cPath, BUFFER_SIZE, "%s%cTrackTemplates", GetResourcePath(), PATH_SLASH_CHAR);
 	vector<string> templates;
 	SearchDirectory(templates, cPath, "RTRACKTEMPLATE", true);
 	for (int i = 0; i < (int)templates.size(); i++)
@@ -752,15 +751,15 @@ int XenakiosInit()
 			{
 				char cDesc[BUFFER_SIZE];
 				char cID[BUFFER_SIZE];
-				_snprintf(cID, BUFFER_SIZE, "XENAKIOS_LOADTRACKTEMPLATE%d", iNum);
-				_snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("Xenakios/SWS: [Deprecated] Load track template %d","sws_actions"), iNum);
+				snprintf(cID, BUFFER_SIZE, "XENAKIOS_LOADTRACKTEMPLATE%d", iNum);
+				snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("Xenakios/SWS: [Deprecated] Load track template %d","sws_actions"), iNum);
 				SWSRegisterCommandExt(DoOpenTrackTemplate, cID, cDesc, iNum, false);
 			}
 		}
 	}
 
 	// Add project template actions
-	_snprintf(cPath, BUFFER_SIZE, "%s%cProjectTemplates", GetResourcePath(), PATH_SLASH_CHAR);
+	snprintf(cPath, BUFFER_SIZE, "%s%cProjectTemplates", GetResourcePath(), PATH_SLASH_CHAR);
 	templates.clear();
 	SearchDirectory(templates, cPath, "RPP", true);
 	for (int i = 0; i < (int)templates.size(); i++)
@@ -773,8 +772,8 @@ int XenakiosInit()
 			{
 				char cID[BUFFER_SIZE];
 				char cDesc[BUFFER_SIZE];
-				_snprintf(cID, BUFFER_SIZE, "XENAKIOS_LOADPROJTEMPL%d", iNum);
-				_snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("Xenakios/SWS: [Deprecated] Load project template %d","sws_actions"), iNum);
+				snprintf(cID, BUFFER_SIZE, "XENAKIOS_LOADPROJTEMPL%d", iNum);
+				snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("Xenakios/SWS: [Deprecated] Load project template %d","sws_actions"), iNum);
 				SWSRegisterCommandExt(DoOpenProjectTemplate, cID, cDesc, iNum, false);
 			}
 		}

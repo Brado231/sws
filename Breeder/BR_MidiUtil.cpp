@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -612,12 +612,12 @@ void BR_MidiItemTimePos::Restore (double timeOffset /*=0*/)
 			MIDI_SetItemExtents(item, TimeMap_timeToQN(loopStart), TimeMap_timeToQN(loopEnd));
 
 			SetMediaItemInfo_Value(item , "B_LOOPSRC", 1); // because MIDI_SetItemExtents() disables looping
-			TrimItem(item, position, position + length, true);
+			TrimItem(item, position, position + length, false, true); // NF: unsure if takes env's should be adjusted here
 			SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", loopedOffset);
 		}
 		else
 		{
-			TrimItem(item, position, position + length, true);
+			TrimItem(item, position, position + length, true, true);
 		}
 
 		for (size_t i = 0; i < midiTake->noteEvents.size(); ++i)
@@ -1325,7 +1325,7 @@ void SetSelectedNotes (MediaItem_Take* take, const vector<int>& selectedNotes, b
 			++selectedId;
 		}
 
-		MIDI_SetNote(take, i, ((unselectOthers) ? (&selected) : ((&selected) ? &selected : NULL)), NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+		MIDI_SetNote(take, i, unselectOthers ? &selected : (selected ? &selected : NULL), NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 	}
 }
 
@@ -1370,7 +1370,7 @@ void UnselectAllEvents (MediaItem_Take* take, int lane)
 			{
 				int type = 0;
 				if (MIDI_GetTextSysexEvt(take, id, NULL, NULL, NULL, &type, NULL, NULL) && ((lane == CC_SYSEX && type == -1) || (lane == CC_TEXT_EVENTS && type != -1)))
-					MIDI_SetTextSysexEvt(take, id, &g_bFalse, NULL, NULL, NULL, NULL, NULL, NULL);
+					MIDI_SetTextSysexEvt(take, id, &g_bFalse, NULL, NULL, NULL, NULL, 0, NULL);
 			}
 		}
 		else if (lane >= CC_14BIT_START)
@@ -1633,8 +1633,9 @@ int MapVelLaneToReaScriptCC (int lane)
 {
 	if (lane == CC_VELOCITY)        return 0x200;
 	if (lane == CC_VELOCITY_OFF)    return 0x207;
+	if (lane == CC_NOTATION_EVENTS) return 0x208;
 	if (lane >= 0   && lane <= 127) return lane;
-	if (lane >= 128 && lane <= 133)	return 0x200 | (lane+1 & 0x7F);
+	if (lane >= 128 && lane <= 133) return 0x200 | ((lane+1) & 0x7F);
 	if (lane >= 134 && lane <= 165) return 0x100 | (lane - 134);
 	else                            return -1;
 }
@@ -1643,6 +1644,7 @@ int MapReaScriptCCToVelLane (int cc)
 {
 	if (cc == 0x200)                return CC_VELOCITY;
 	if (cc == 0x207)                return CC_VELOCITY_OFF;
+	if (cc == 0x208)                return CC_NOTATION_EVENTS;
 	if (cc >= 0     && cc <= 127)   return cc;
 	if (cc >= 0x201 && cc <= 0x206) return cc - 385;
 	if (cc >= 0x100 && cc <= 0x11F) return cc - 122;

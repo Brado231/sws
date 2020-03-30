@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_RegionPlaylist.h
 /
-/ Copyright (c) 2012-2013 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -74,10 +74,9 @@ public:
 class RegionPlaylistView : public SWS_ListView {
 public:
 	RegionPlaylistView(HWND hwndList, HWND hwndEdit);
-#ifdef _SNM_MUTEX
-	void Update();
-#endif
 	void UpdateCompact();
+	void OnDrag();
+	void OnEndDrag();
 protected:
 	void GetItemText(SWS_ListItem* item, int iCol, char* str, int iStrMax);
 	void GetItemList(SWS_ListItemList* pList);
@@ -86,8 +85,6 @@ protected:
 	void OnItemDblClk(SWS_ListItem* item, int iCol);
 	int OnItemSort(SWS_ListItem* _item1, SWS_ListItem* _item2);
 	void OnBeginDrag(SWS_ListItem* item);
-	void OnDrag();
-	void OnEndDrag();
 	WDL_PtrList<RgnPlaylistItem> m_draggedItems;
 };
 
@@ -141,6 +138,7 @@ void PlaylistRun();
 void PlaylistPlay(int _playlistId, int _itemId);
 void PlaylistPlay(COMMAND_T*);
 void PlaylistSeekPrevNext(COMMAND_T*);
+void PlaylistSeekPrevNextCurBased(COMMAND_T*);
 void PlaylistStop();
 void PlaylistStopped(bool _pause = false);
 void PlaylistUnpaused();
@@ -148,7 +146,17 @@ void PlaylistResync();
 void SetPlaylistRepeat(COMMAND_T*);
 int IsPlaylistRepeat(COMMAND_T*);
 
-void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode);
+void SetPlaylistOptionSmoothSeek(COMMAND_T*);
+int IsPlaylistOptionSmoothSeek(COMMAND_T*);
+
+
+enum AppendPasteCropPlaylist_Mode {
+  CROP_PROJECT,     // crop current project
+  CROP_PROJECT_TAB, // crop to new project tab
+  PASTE_PROJECT,    // append to current project
+  PASTE_CURSOR,     // paste at cursor position
+};
+void AppendPasteCropPlaylist(RegionPlaylist* _playlist, const AppendPasteCropPlaylist_Mode _mode);
 void AppendPasteCropPlaylist(COMMAND_T*);
 
 void RegionPlaylistSetTrackListChange();

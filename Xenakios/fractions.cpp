@@ -35,7 +35,7 @@ typedef struct t_Notevalue_struct
 
 t_Notevalue_struct g_NoteValues[]=
 {
-	
+
 	{"2",8},
 	{"1",4},
 	{"1/2",2},
@@ -46,7 +46,7 @@ t_Notevalue_struct g_NoteValues[]=
 	{"1/32",1.0/8},
 	{"1/64",1.0/16},
 	{"1/128",1.0/32},
-	{NULL,NULL}
+	{NULL,0}
 
 };
 
@@ -56,37 +56,6 @@ double GetBeatValueFromTable(int indx)
 	TheResult=g_NoteValues[indx].NotevalueBeats;
 	return TheResult;
 }
-
-static void showFrac(double &val, char *buf)
-{
-#define FLOATNEAR(x,y) (fabs(x-y)<0.00000001)
-  if (FLOATNEAR(val,floor(val))) { val=floor(val); if (buf) sprintf(buf,"%d",(int)val); }
-  else if (FLOATNEAR(val,ceil(val))) { val=ceil(val); if (buf) sprintf(buf,"%d",(int)val); }
-  else 
-  {
-    int n,d;
-    for (n = 1; n <= 16; n ++)
-    {
-      if (val < n/4096 - 0.000001) continue;
-      
-      int mv=n<4?4096:128;
-
-      for (d = 2; d <= mv; d ++)
-      {
-        double v= (double)n/(double)d;
-        if (FLOATNEAR(val,v))
-        {
-          if (buf) sprintf(buf,"%d/%d",n,d);
-          val=v;
-          return;
-        }
-        if (val > v) break; // our fractions only get smaller, so early out this
-      }
-    }
-    if (buf) sprintf(buf,"%.3f",val);
-  }
-}
-
 
 static double flexi_atof(const char *p)
 {

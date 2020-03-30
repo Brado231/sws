@@ -41,7 +41,7 @@ WDL_DLGRET doLabelProcDlg(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	if (INT_PTR r = SNM_HookThemeColorsMessage(hwnd, uMsg, wParam, lParam))
 		return r;
 
-	WDL_FastString *pStr = (WDL_FastString*) GetWindowLong(hwnd, GWLP_USERDATA);
+	WDL_FastString *pStr = (WDL_FastString*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 	switch(uMsg)
 	{
 		case WM_INITDIALOG:
@@ -221,7 +221,7 @@ void RunLabelCommand(WDL_FastString* cmd, const char* undoName)
 
 	char buf[512];
 	int itemCount = 0;
-	int numSel = CountSelectedMediaItems(NULL);
+	const int numSel = CountSelectedMediaItems(NULL);
 	for (int iTrack = 1; iTrack <= GetNumTracks(); iTrack++)
 	{
 		WDL_TypedBuf<MediaItem*> items;

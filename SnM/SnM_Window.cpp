@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Windows.cpp
 /
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -152,7 +152,7 @@ HWND GetReaHwndByTitle(const char* _title)
 			// in a floating docker (w/o other hwnds)?
 			else {
 				char dockerName[256]="";
-				if (_snprintfStrict(dockerName, sizeof(dockerName), "%s%s", _title, __localizeFunc(" (docked)", "docker", 0)) > 0 && !strcmp(dockerName, buf))
+				if (snprintfStrict(dockerName, sizeof(dockerName), "%s%s", _title, __localizeFunc(" (docked)", "docker", 0)) > 0 && !strcmp(dockerName, buf))
 					if (w = GetReaChildWindowByTitle(w, _title))
 						return w;
 			}
@@ -199,7 +199,7 @@ HWND GetReaHwndByTitle(const char* _title)
 	// in a floating docker (w/o other hwnds)?
 	{
 		char dockerName[256]="";
-		if (_snprintfStrict(dockerName, sizeof(dockerName), "%s%s", _title, __localizeFunc(" (docked)", "docker", 0)) > 0)
+		if (snprintfStrict(dockerName, sizeof(dockerName), "%s%s", _title, __localizeFunc(" (docked)", "docker", 0)) > 0)
 			if ((w = GetReaHwndByTitleInFloatingDocker(_title, dockerName)))
 				return w;
 	}
@@ -418,23 +418,6 @@ HWND GetActionListBox(char* _currentSection, int _sectionSz)
 }
 
 
-// overrides some wdl's list view funcs to avoid cast issues on osx
-// (useful with native list views which are SWELL_ListView but that were not instanciated by the extension..)
-#ifdef _WIN32
-#define SNM_ListView_GetSelectedCount ListView_GetSelectedCount
-#define SNM_ListView_GetItemCount ListView_GetItemCount
-#define SNM_ListView_GetItem ListView_GetItem
-#define SNM_ListView_GetItemText ListView_GetItemText
-#define SNM_ListView_SetItemState ListView_SetItemState
-#else
-#define SNM_ListView_GetSelectedCount ListView_GetSelectedCountCast
-#define SNM_ListView_GetItemCount ListView_GetItemCountCast
-#define SNM_ListView_GetItem ListView_GetItemCast
-#define SNM_ListView_GetItemText ListView_GetItemTextCast
-#define SNM_ListView_SetItemState ListView_SetItemStateCast
-#endif
-
-
 // returns the list view's selected item, or:
 // -1 if the action wnd is not opened
 // deprecated: -2 if the custom id cannot be retrieved (hidden column)
@@ -445,31 +428,31 @@ int GetSelectedAction(char* _section, int _secSize, int* _cmdId, char* _id, int 
 	HWND hList = GetActionListBox(_section, _secSize);
 	if (hList)
 	{
-		if (SNM_ListView_GetSelectedCount(hList))
+		if (ListView_GetSelectedCount(hList))
 		{
 			LVITEM li;
 			li.mask = LVIF_STATE | LVIF_PARAM;
 			li.stateMask = LVIS_SELECTED;
 			li.iSubItem = 0;
-			for (int i=0; i < SNM_ListView_GetItemCount(hList); i++)
+			for (int i=0; i < ListView_GetItemCount(hList); i++)
 			{
 				li.iItem = i;
-				SNM_ListView_GetItem(hList, &li);
+				ListView_GetItem(hList, &li);
 				if (li.state == LVIS_SELECTED)
 				{
 					int cmdId = (int)li.lParam;
 					if (_cmdId) *_cmdId = cmdId;
 
 					char actionName[SNM_MAX_ACTION_NAME_LEN] = "";
-					SNM_ListView_GetItemText(hList, i, 1, actionName, SNM_MAX_ACTION_NAME_LEN); //JFB displaytodata? (ok: columns not re-orderable yet)
+					ListView_GetItemText(hList, i, 1, actionName, SNM_MAX_ACTION_NAME_LEN); //JFB displaytodata? (ok: columns not re-orderable yet)
 					if (_desc && _descSize > 0)
 						lstrcpyn(_desc, actionName, _descSize);
 
 					if (_id && _idSize > 0)
 					{
 						const char *custid=ReverseNamedCommandLookup(cmdId);
-						if (custid) _snprintfStrict(_id, _idSize, "_%s", custid);
-						else _snprintfStrict(_id, _idSize, "%d", cmdId);
+						if (custid) snprintfStrict(_id, _idSize, "_%s", custid);
+						else snprintfStrict(_id, _idSize, "%d", cmdId);
 					}
 					return i;
 				}
@@ -494,7 +477,7 @@ bool GetSelectedAction(char* _idstrOut, int _idStrSz, KbdSectionInfo* _expectedS
 	{
 		case -4: {
 			char msg[256]="";
-			_snprintfSafe(msg,
+			snprintf(msg,
 				sizeof(msg),
 				__LOCALIZE_VERFMT("The section \"%s\" is not selected in the Actions window!\nDo you want to select it?","sws_mbox"),
 				__localizeFunc(_expectedSection->name,"accel_sec",0));
@@ -530,131 +513,6 @@ bool GetSelectedAction(char* _idstrOut, int _idStrSz, KbdSectionInfo* _expectedS
 	return true;
 }
 
-// dump actions or the wiki ALR summary for the current section *as displayed* in the action dlg
-// see http://forum.cockos.com/showthread.php?t=61929 and http://wiki.cockos.com/wiki/index.php/Action_List_Reference
-// _type: 1 & 2 for ALR wiki (1=native actions, 2=SWS)
-// _type: 3, 4 & 5 for basic dump (3=native actions, 4=SWS, 5=user macros)
-// API LIMITATION: could be much simplified if we could retrieve string ids fom cmdIds, 
-//                 e.g. if we had: const char* ReverseNamedCommandLookup(int)
-bool DumpActionList(int _type, const char* _title, const char* _lineFormat, const char* _heading, const char* _ending)
-{
-	// keep the help text on a signle line (for the langpack gen tool..)
-	const char* help = __LOCALIZE("Note: this action needs the action window to be opened (with the section you want to dump).\nIt obeys the action list filter, so to get the full list you need a clear filter.\nExample: to dump a MIDI editor action list the easiest way is to assign a keyboard shortcut or\ntoolbar button, open the MIDI editor section of the action list and fire the shortcut/dump action.","sws_mbox");
-	char currentSection[SNM_MAX_SECTION_NAME_LEN] = "";
-	HWND hList = GetActionListBox(currentSection, SNM_MAX_SECTION_NAME_LEN);
-	if (hList && currentSection)
-	{
-		char sectionURL[SNM_MAX_SECTION_NAME_LEN] = ""; 
-		if (!GetSectionURL(_type==1||_type==2, currentSection, sectionURL, SNM_MAX_SECTION_NAME_LEN))
-		{
-			MessageBox(GetMainHwnd(), __LOCALIZE("Dump failed: unknown section!","sws_mbox"), _title, MB_OK);
-			return false;
-		}
-
-		char name[SNM_MAX_SECTION_NAME_LEN*2] = "", fn[SNM_MAX_PATH] = "";
-		if (_snprintfStrict(name, sizeof(name), "%s_Section%s.txt", sectionURL, (_type==2||_type==4) ? "_SWS" : _type==5 ? "_Custom" : "") <= 0)
-			*name = '\0';
-		if (!BrowseForSaveFile(_title, GetResourcePath(), name, SNM_TXT_EXT_LIST, fn, sizeof(fn)))
-			return false;
-
-		if (FILE* f = fopenUTF8(fn, "w"))
-		{
-			// flush
-			fputs("\n", f);
-			fclose(f);
-
-			f = fopenUTF8(fn, "a"); 
-			if (!f)
-				return false; // just in case..
-
-			if (_heading)
-				fprintf(f, "%s", _heading);
-
-			int nbWrote=0;
-			LVITEM li;
-			li.mask = LVIF_STATE | LVIF_PARAM;
-			li.iSubItem = 0;
-			for (int i=0; i < SNM_ListView_GetItemCount(hList); i++)
-			{
-				li.iItem = i;
-				SNM_ListView_GetItem(hList, &li);
-				int cmdId = (int)li.lParam;
-
-				char custId[SNM_MAX_ACTION_CUSTID_LEN] = "";
-				char cmdName[SNM_MAX_ACTION_NAME_LEN] = "";
-				SNM_ListView_GetItemText(hList, i, 1, cmdName, SNM_MAX_ACTION_NAME_LEN);
-				SNM_ListView_GetItemText(hList, i, 4, custId, SNM_MAX_ACTION_CUSTID_LEN);
-
-				bool isCustom = IsMacroOrScript(cmdName);
-				int isSws = IsSwsAction(cmdName);
-				bool isSwsCustom = !IsLocalizableAction(custId);
-				if (((_type==1||_type==3) && !isSws && !isCustom && !isSwsCustom) || 
-					((_type==2||_type==4) && isSws  && !isCustom && !isSwsCustom) ||
-					(_type==5 && (isCustom||isSwsCustom)))
-				{
-					if (!*custId && _snprintfStrict(custId, sizeof(custId), "%d", cmdId) <= 0) // for native actions
-						*custId = '\0';
-					if (*custId) {
-						fprintf(f, _lineFormat, sectionURL, custId, cmdName, custId);
-						nbWrote++;
-					}
-				}
-			}
-			if (_ending)
-				fprintf(f, "%s", _ending); 
-
-			fclose(f);
-
-			WDL_FastString msg;
-			msg.SetFormatted(SNM_MAX_PATH, 
-				nbWrote ? __LOCALIZE_VERFMT("Wrote %s","sws_mbox") :
-				__LOCALIZE_VERFMT("No action wrote in %s!\nProbable cause: filtered action list, no matching actions, etc...","sws_mbox"),
-				fn);
-			msg.Append("\n\n");
-			msg.Append(help);
-			MessageBox(GetMainHwnd(), msg.Get(), _title, MB_OK);
-			return true;
-		}
-		else
-			MessageBox(GetMainHwnd(), __LOCALIZE("Dump failed: unable to write to file!","sws_mbox"), _title, MB_OK);
-	}
-	else
-	{
-		WDL_FastString msg(__LOCALIZE("Dump failed: Actions window not opened!","sws_mbox"));
-		msg.Append("\n\n");
-		msg.Append(help);
-		MessageBox(GetMainHwnd(), msg.Get(), _title, MB_OK);
-	}
-	return false;
-}
-
-void DumpWikiActionList(COMMAND_T* _ct)
-{
-	DumpActionList(
-		(int)_ct->user, 
-		__LOCALIZE("S&M - Save ALR Wiki summary","sws_mbox"),
-		"|-\n| [[%s_%s|%s]] || %s\n",
-		"{| class=\"wikitable\"\n|-\n! Action name !! Cmd ID\n",
-		"|}\n");
-}
-
-void DumpActionList(COMMAND_T* _ct)
-{
-	DumpActionList((int)_ct->user,
-		__LOCALIZE("S&M - Dump action list","sws_mbox"),
-		"%s\t%s\t%s\n",
-		"Section\tId\tAction\n",
-		NULL);
-}
-
-
-#undef SNM_ListView_GetSelectedCount
-#undef SNM_ListView_GetItemCount
-#undef SNM_ListView_GetItem
-#undef SNM_ListView_GetItemText
-#undef SNM_ListView_SetItemState
-
-
 ///////////////////////////////////////////////////////////////////////////////
 // Track FX chain windows: show/hide
 // note: Cockos' TrackFX_GetChainVisible() and my GetSelectedTrackFX() are not
@@ -677,12 +535,27 @@ void ShowFXChain(COMMAND_T* _ct)
 // _ct: NULL=all tracks, selected tracks otherwise
 void HideFXChain(COMMAND_T* _ct) 
 {
+	Undo_BeginBlock();
 	for (int i=0; i <= GetNumTracks(); i++) // incl. master
 	{
 		MediaTrack* tr = CSurf_TrackFromID(i, false);
-		if (tr && (!_ct || (_ct && *(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL))))
-			TrackFX_Show(tr, GetSelectedTrackFX(tr), 0); // includes an undo point
+		if (tr && (!_ct || (_ct && *(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL)))) 
+		{
+			TrackFX_Show(tr, -1, 0); // no valid index required for closing FX chain
+
+			// take fx
+			for (int j = 0; j < CountTrackMediaItems(tr); j++) 
+			{
+				MediaItem* item = GetTrackMediaItem(tr, j);
+				for (int k = 0; k < CountTakes(item); k++) 
+				{
+					MediaItem_Take* take = GetMediaItemTake(item, k);
+					TakeFX_Show(take, -1, 0);
+				}
+			}
+		}
 	}
+	Undo_EndBlock("SWS/S&M: Close all FX chain windows", -1);
 }
 
 void ToggleFXChain(COMMAND_T* _ct) 
@@ -700,7 +573,7 @@ void ToggleFXChain(COMMAND_T* _ct)
 
 int IsToggleFXChain(COMMAND_T * _ct) 
 {
-	int selTrCount = SNM_CountSelectedTracks(NULL, true);
+	const int selTrCount = SNM_CountSelectedTracks(NULL, true);
 	// single track selection: we can return a toggle state
 	if (selTrCount == 1)
 		return (TrackFX_GetChainVisible(SNM_GetSelectedTrack(NULL, 0, true)) != -1);
@@ -739,6 +612,19 @@ void ToggleFloatFX(MediaTrack* _tr, int _fx)
 	}
 }
 
+// _fx = -1 for selected FX
+void ToggleFloatTakeFX(MediaItem_Take* _take, int _fx)
+{
+	if (_take && _fx < TakeFX_GetCount(_take))
+	{
+		int currenSel = GetSelectedTakeFX(_take); // avoids several parsings
+		if (TakeFX_GetFloatingWindow(_take, (_fx == -1 ? currenSel : _fx)))
+			TakeFX_Show(_take, (_fx == -1 ? currenSel : _fx), 2);
+		else
+			TakeFX_Show(_take, (_fx == -1 ? currenSel : _fx), 3);
+	}
+}
+
 // _all=true: all FXs for all tracks, false: selected tracks + given _fx
 // _fx=-1: current selected FX. Ignored when _all == true.
 // showflag=0 for toggle, =2 for hide floating window (valid index), =3 for show floating window (valid index)
@@ -759,6 +645,62 @@ void FloatUnfloatFXs(MediaTrack* _tr, bool _all, int _showFlag, int _fx, bool _s
 	}
 }
 
+void FloatUnfloatTakeFXs(MediaTrack * _tr, bool _all, int _showFlag, int _fx, bool _selTracks)
+{
+	bool matchTrack = (_tr && (!_selTracks || (_selTracks && *(int*)GetSetMediaTrackInfo(_tr, "I_SELECTED", NULL))));
+	if (_all && matchTrack)
+	{
+		for (int k = 0; k < CountTrackMediaItems(_tr); k++)
+		{
+			MediaItem* item = GetTrackMediaItem(_tr, k);
+			for (int l = 0; l < CountTakes(item); l++)
+			{
+				MediaItem_Take* take = GetMediaItemTake(item, l);
+				int nbTakeFX = TakeFX_GetCount(take);
+				for (int m = 0; m < nbTakeFX; m++)
+				{
+					if (!_showFlag) ToggleFloatTakeFX(take, m);
+					else TakeFX_Show(take, m, _showFlag);
+				}
+			}
+		}
+	}
+	else if (!_all && matchTrack)
+	{
+		if (!_showFlag) {
+			for (int k = 0; k < CountTrackMediaItems(_tr); k++)
+			{
+				MediaItem* item = GetTrackMediaItem(_tr, k);
+				for (int l = 0; l < CountTakes(item); l++)
+				{
+					MediaItem_Take* take = GetMediaItemTake(item, l);
+					int nbTakeFX = TakeFX_GetCount(take);
+					for (int m = 0; m < nbTakeFX; m++)
+					{
+						ToggleFloatTakeFX(take, (_fx == -1 ? GetSelectedTakeFX(take) : _fx));
+					}
+				}
+			}
+		}
+		else {
+			for (int k = 0; k < CountTrackMediaItems(_tr); k++)
+			{
+				MediaItem* item = GetTrackMediaItem(_tr, k);
+				for (int l = 0; l < CountTakes(item); l++)
+				{
+					MediaItem_Take* take = GetMediaItemTake(item, l);
+					int nbTakeFX = TakeFX_GetCount(take);
+					for (int m = 0; m < nbTakeFX; m++)
+					{
+						TakeFX_Show(take, (_fx == -1 ? GetSelectedTakeFX(take) : _fx), _showFlag);
+					}
+				}
+			}
+		}
+	}
+}
+
+
 // _all: true for all FXs/tracks, false for selected tracks + for given the given _fx
 // _fx = -1, for current selected FX. Ignored when _all == true.
 // showflag=0 for toggle, =2 for hide floating window (index valid), =3 for show floating window (index valid)
@@ -769,6 +711,19 @@ void FloatUnfloatFXs(bool _all, int _showFlag, int _fx, bool _selTracks)
 		MediaTrack* tr = CSurf_TrackFromID(i, false);
 		if (tr && (_all || !_selTracks || (_selTracks && *(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL))))
 			FloatUnfloatFXs(tr, _all, _showFlag, _fx, _selTracks);
+	}
+}
+
+// _all: true for all FXs/tracks, false for selected tracks + for given the given _fx
+// _fx = -1, for current selected FX. Ignored when _all == true.
+// showflag=0 for toggle, =2 for hide floating window (index valid), =3 for show floating window (index valid)
+void FloatUnfloatTakeFXs(bool _all, int _showFlag, int _fx, bool _selTracks)
+{
+	for (int i = 1; i <= GetNumTracks(); i++) // skip master
+	{
+		MediaTrack* tr = CSurf_TrackFromID(i, false);
+		if (tr && (_all || !_selTracks || (_selTracks && *(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL))))
+			FloatUnfloatTakeFXs(tr, _all, _showFlag, _fx, _selTracks);
 	}
 }
 
@@ -787,11 +742,14 @@ void ShowAllFXWindows(COMMAND_T * _ct) {
 }
 void CloseAllFXWindows(COMMAND_T * _ct) {
 	FloatUnfloatFXs(true, 2, -1, ((int)_ct->user == 1));
+	FloatUnfloatTakeFXs(true, 2, -1, ((int)_ct->user == 1));
 }
 void ToggleAllFXWindows(COMMAND_T * _ct) {
 	FloatUnfloatFXs(true, 0, -1, ((int)_ct->user == 1));
 }
 
+// NF: action must be run via shortcut to work correctly, duh.
+// (otherwise action list would get focused)
 void CloseAllFXWindowsExceptFocused(COMMAND_T * _ct)
 {
 	HWND w = GetForegroundWindow();
@@ -808,6 +766,24 @@ void CloseAllFXWindowsExceptFocused(COMMAND_T * _ct)
 					FloatUnfloatFXs(tr, false, 2, j, false); // close
 			}
 		}
+
+		// take FX
+		for (int k = 0; k < CountTrackMediaItems(tr); k++)
+		{
+			MediaItem* item = GetTrackMediaItem(tr, k);
+			for (int l = 0; l < CountTakes(item); l++)
+			{
+				MediaItem_Take* take = GetMediaItemTake(item, l);
+				int nbTakeFX = TakeFX_GetCount(take);
+				for (int m = 0; m < nbTakeFX; m++)
+				{
+					HWND w2 = TakeFX_GetFloatingWindow(take, m);
+					if (!SWS_IsWindow(w2) || w != w2)
+						FloatUnfloatTakeFXs(tr, false, 2, m, false); // close
+				}
+			}
+		}
+		
 	}
 }
 
@@ -864,10 +840,13 @@ bool CycleTracksAndFXs(int _trStart, int _fxStart, int _dir, bool _selectedTrack
 				if (j >= fxCount || j < 0)
 					break; // implies track cycle
 
-				// perform custom stuff
-				if (job(tr, j, _selectedTracks))
-					return true;
-
+				// NF fix #864: check for offline FX and skip them. We can use API, added in R5.95
+				if (!TrackFX_GetOffline(tr, j)) // FX is online, perform job, otherwise skip to next
+				{ 
+					// perform custom stuff
+					if (job(tr, j, _selectedTracks))
+						return true;
+				}
 				cpt2++;
 				j += _dir;
 			}
@@ -907,7 +886,7 @@ bool FloatOnlyJob(MediaTrack* _tr, int _fx, bool _selectedTracks)
 
 bool CycleFocusFXWnd(int _dir, bool _selectedTracks, bool* _cycled)
 {
-	if (!_selectedTracks || (_selectedTracks && SNM_CountSelectedTracks(NULL, true)))
+	if (!_selectedTracks || SNM_CountSelectedTracks(NULL, true))
 	{
 		MediaTrack* firstTrFound = NULL;
 		int firstFXFound = -1;
@@ -939,7 +918,7 @@ bool CycleFocusFXWnd(int _dir, bool _selectedTracks, bool* _cycled)
 }
 
 
-WDL_PtrList_DeleteOnDestroy<SNM_TrackInt> g_hiddenFloatingWindows;
+WDL_PtrList_DOD<SNM_TrackInt> g_hiddenFloatingWindows;
 int g_lastCycleFocusFXDirection = 0; //used for direction change..
 
 void CycleFocusFXMainWnd(int _dir, bool _selectedTracks, bool _showmain) 

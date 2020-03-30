@@ -1,7 +1,7 @@
 /******************************************************************************
 / sws_util.h
 /
-/ Copyright (c) 2012 Tim Payne (SWS), Jeffos
+/ Copyright (c) 2012 and later Tim Payne (SWS), Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27,14 +27,11 @@
 
 #pragma once
 
-#define SWS_URL					"http://www.sws-extension.org"
-#define SWS_URL_DOWNLOAD		SWS_URL
-#define SWS_URL_VERSION_H		"http://www.sws-extension.org/download/featured/version.h"
-#define SWS_URL_BETA_DOWNLOAD	"http://www.sws-extension.org/download/pre-release/"
-#define SWS_URL_BETA_VERSION_H	"http://www.sws-extension.org/download/pre-release/version.h"
-#define SWS_URL_HELP_DIR		"http://www.sws-extension.org" // e.g. SWS_URL_HELP"/reaconsole.php"
-#define SWS_URL_WHATSNEW        "http://www.sws-extension.org/whatsnew.php"
-#define SWS_URL_BETA_WHATSNEW   "http://www.sws-extension.org/download/pre-release/whatsnew-v%d.%d.%d.%d.html"
+#if defined(_SWS_DEBUG)
+  #define WDL_PtrList_DOD WDL_PtrList_DeleteOnDestroy
+#else
+  #define WDL_PtrList_DOD WDL_PtrList
+#endif
 
 #define BUFFER_SIZE				2048
 #define SWS_THEMING				true
@@ -53,7 +50,6 @@
 #define UTF8_CHECKMARK          "\xE2\x9C\x93"
 #define UTF8_MULTIPLICATION     "\xE2\x9C\x95"
 
-// +IsSwsAction() to skip "SWS: ", "SWS/S&M: ", "SWS/FNG: ", etc...
 #define SWS_CMD_SHORTNAME(_ct)	(_ct ? GetLocalizedActionName(_ct->accel.desc) + IsSwsAction(_ct->accel.desc) : "")
 #define __ARRAY_SIZE(x)			(sizeof(x) / sizeof(x[0]))
 #define BOUNDED(x,lo,hi)		((x) < (lo) ? (lo) : (x) > (hi) ? (hi) : (x))
@@ -165,36 +161,32 @@ extern MTRand g_MTRand;
 #define BS_MULTILINE 0
 #define _strdup strdup
 #define _strndup strndup
-#define _snprintf snprintf
 #define _stricmp stricmp
 #define _strnicmp strnicmp
 #define LVKF_ALT 1
 #define LVKF_CONTROL 2
 #define LVKF_SHIFT 4
 extern const GUID GUID_NULL;
-//sws_util.mm
+
+// sws_util.mm
 void SWS_GetDateString(int time, char* buf, int bufsize);
 void SWS_GetTimeString(int time, char* buf, int bufsize);
-void SetColumnArrows(HWND h, int iSortCol);
+
+#ifdef __APPLE__
 int GetCustomColors(COLORREF custColors[]);
 void SetCustomColors(COLORREF custColors[]);
 void ShowColorChooser(COLORREF initialCol);
 bool GetChosenColor(COLORREF* pColor);
 void HideColorChooser();
-void EnableColumnResize(HWND h);
+void SetMenuItemSwatch(HMENU hMenu, UINT pos, int size, COLORREF color);
+#endif
+
 HCURSOR SWS_LoadCursor(int id);
 #define MOUSEEVENTF_LEFTDOWN    0x0002 /* left button down */
 #define MOUSEEVENTF_LEFTUP      0x0004 /* left button up */
 #define MOUSEEVENTF_RIGHTDOWN   0x0008 /* right button down */
 #define MOUSEEVENTF_RIGHTUP     0x0010 /* right button up */
 void mouse_event(DWORD dwFlags, DWORD dx, DWORD dy, DWORD dwData, ULONG_PTR dwExtraInfo);
-int ListView_GetSelectedCountCast(HWND h);
-int ListView_GetItemCountCast(HWND h);
-bool ListView_GetItemCast(HWND h, LVITEM *item);
-void ListView_GetItemTextCast(HWND hwnd, int item, int subitem, char *text, int textmax);
-void ListView_RedrawItemsCast(HWND h, int startitem, int enditem);
-bool ListView_SetItemStateCast(HWND h, int ipos, int state, int statemask);
-BOOL IsWindowEnabled(HWND hwnd);
 int GetMenuString(HMENU hMenu, UINT uIDItem, char* lpString, int nMaxCount, UINT uFlag);
 #endif
 
@@ -207,7 +199,7 @@ int SWSRegisterCmds(COMMAND_T* pCommands, const char* cFile, bool localize); // 
 
 int SWSCreateRegisterDynamicCmd(int uniqueSectionId, int cmdId, void(*doCommand)(COMMAND_T*), void(*onAction)(COMMAND_T*, int, int, int, HWND), int(*getEnabled)(COMMAND_T*), const char* cID, const char* cDesc, const char* cMenu, INT_PTR user, const char* cFile, bool localize);
 #define SWSRegisterCommandExt(a, b, c, d, e) SWSCreateRegisterDynamicCmd(0, 0, a, NULL, NULL, b, c, "", d, __FILE__, e)
-void SWSFreeUnregisterDynamicCmd(int id);
+bool SWSFreeUnregisterDynamicCmd(int id);
 
 void ActionsList(COMMAND_T*);
 int SWSGetCommandID(void (*cmdFunc)(COMMAND_T*), INT_PTR user = 0, const char** pMenuText = NULL);
@@ -232,26 +224,30 @@ int GetFolderDepth(MediaTrack* tr, int* iType, MediaTrack** nextTr);
 int GetTrackVis(MediaTrack* tr); // &1 == mcp, &2 == tcp
 void SetTrackVis(MediaTrack* tr, int vis); // &1 == mcp, &2 == tcp
 int AboutBoxInit(); // Not worth its own .h
-void* GetConfigVar(const char* cVar);
 HWND GetTrackWnd();
 HWND GetRulerWnd();
-char* GetHashString(const char* in, char* out);
 const GUID* TrackToGuid(MediaTrack* tr);
 MediaTrack* GuidToTrack(const GUID* guid);
 bool GuidsEqual(const GUID* g1, const GUID* g2);
 bool TrackMatchesGuid(MediaTrack* tr, const GUID* g);
 const char *stristr(const char* a, const char* b);
 
+// NF: fix / workaround for setting take start offset doesn't work if containing stretch markers
+// see https://forum.cockos.com/showthread.php?t=180571
+// probably all functions setting take start offset should use this for now, until it's changed in REAPER
+// caller must check for take != NULL
+void UpdateStretchMarkersAfterSetTakeStartOffset(MediaItem_Take* take, double takeStartOffset_multiplyPlayrate);
+
 #ifdef _WIN32
-wchar_t* WideCharPlz(const char* inChar);
-void dprintf(const char* format, ...);
+  void dprintf(const char* format, ...);
 #else
-#define dprintf printf
-#ifndef OutputDebugString
-#define OutputDebugString printf
-#endif
+  #define dprintf printf
+  #ifndef OutputDebugString
+    #define OutputDebugString(x) printf("%s", x)
+  #endif
 #endif
 
+void SWS_GetAllTracks(WDL_TypedBuf<MediaTrack*>* buf, bool bMaster = false);
 void SWS_GetSelectedTracks(WDL_TypedBuf<MediaTrack*>* buf, bool bMaster = false);
 void SWS_GetSelectedMediaItems(WDL_TypedBuf<MediaItem*>* buf);
 void SWS_GetSelectedMediaItemsOnTrack(WDL_TypedBuf<MediaItem*>* buf, MediaTrack* tr);
@@ -266,9 +262,6 @@ const char* GetLocalizedActionName(const char* _defaultStr, int _flags = 0, cons
 bool IsLocalizableAction(const char* _customId);
 TrackEnvelope* SWS_GetTakeEnvelopeByName(MediaItem_Take* take, const char* envname);
 TrackEnvelope* SWS_GetTrackEnvelopeByName(MediaTrack* track, const char* envname);
-
-// Generate html whatsnew, MakeWhatsNew.cpp
-int GenHtmlWhatsNew(const char* fnIn, const char* fnOut, bool bFullHTML, const char* _url);
 
 // Functions export to reascript and c++ plugins, Reascript.cpp
 bool RegisterExportedFuncs(reaper_plugin_info_t* _rec);

@@ -43,7 +43,7 @@ static bool g_bRecRedRuler = false;
 
 void UpdateCustomColors()
 {
-#ifdef _WIN32
+#ifndef __APPLE__
 	GetPrivateProfileStruct("REAPER", "custcolors", g_custColors, sizeof(g_custColors), get_ini_file());
 #else
 	GetCustomColors(g_custColors);
@@ -64,7 +64,7 @@ void PersistColors()
 	char str[256];
 	sprintf(str, "%d %d", g_crGradStart, g_crGradEnd);
 	WritePrivateProfileString(SWS_INI, GRADIENT_COLOR_KEY, str, get_ini_file());
-#ifdef _WIN32
+#ifndef __APPLE__
 	WritePrivateProfileStruct("REAPER", "custcolors", g_custColors, sizeof(g_custColors), get_ini_file());
 #else
 	SetCustomColors(g_custColors);
@@ -73,7 +73,7 @@ void PersistColors()
 
 INT_PTR WINAPI doColorDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-#ifndef _WIN32
+#ifdef __APPLE__
 	static int iSettingColor = -1;
 #endif
 	if (INT_PTR r = SNM_HookThemeColorsMessage(hwndDlg, uMsg, wParam, lParam))
@@ -102,7 +102,7 @@ INT_PTR WINAPI doColorDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			DeleteObject(hb);
 			return 1;
 		}
-#ifndef _WIN32
+#ifdef __APPLE__
 		case WM_TIMER:
 		{
 			COLORREF cr;
@@ -167,6 +167,18 @@ INT_PTR WINAPI doColorDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					}
 					else if (wParam == IDC_SETCUST && ChooseColor(&cc))
 						PersistColors();
+#elif !defined(__APPLE__)
+					int cc = 0;
+					if (wParam == IDC_COLOR1) cc = g_crGradStart;
+					if (wParam == IDC_COLOR2) cc = g_crGradEnd;
+
+					if (SWELL_ChooseColor(hwndDlg,&cc,16,(int *)g_custColors))
+					{
+						if (wParam == IDC_COLOR1) g_crGradStart = cc;
+						if (wParam == IDC_COLOR2) g_crGradEnd = cc;
+						PersistColors();
+						InvalidateRect(hwndDlg,NULL,FALSE);
+					}
 #else
 					switch(wParam)
 					{
@@ -211,7 +223,7 @@ INT_PTR WINAPI doColorDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					}
 					else if (wParam == IDC_LOADCOL || wParam == IDC_LOADFROMTHEME)
 					{
-#ifndef _WIN32
+#ifdef __APPLE__
 						if (MessageBox(hwndDlg, __LOCALIZE("WARNING: Loading colors from file will overwrite your global personalized color choices.\nIf these are important to you, press press cancel to abort the loading of new colors!","sws_color"), __LOCALIZE("OSX Color Load WARNING","sws_color"), MB_OKCANCEL) == IDCANCEL)
 							break;
 #endif
@@ -247,7 +259,7 @@ INT_PTR WINAPI doColorDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 							if (!bFound)
 							{
 								char cMsg[512];
-								_snprintf(cMsg, 512, __LOCALIZE_VERFMT("No SWS custom colors found in %s.","sws_color"), cPath);
+								snprintf(cMsg, 512, __LOCALIZE_VERFMT("No SWS custom colors found in %s.","sws_color"), cPath);
 								MessageBox(hwndDlg, cMsg, __LOCALIZE("SWS Color Load","sws_color"), MB_OK);
 							}
 
@@ -267,7 +279,7 @@ INT_PTR WINAPI doColorDlg(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 					// Do something ?
 					// fall through!
 				case IDCANCEL:
-#ifndef _WIN32
+#ifdef __APPLE__
 					if (iSettingColor != -1)
 					{
 						HideColorChooser();
@@ -585,7 +597,7 @@ void TrackCustomColor(int iCustColor)
 			GetSetMediaTrackInfo(tr, "I_CUSTOMCOLOR", &cr);
 	}
 	char cUndoText[100];
-	sprintf(cUndoText, __LOCALIZE_VERFMT("Set track(s) to custom color %d","sws_undo"), iCustColor+1);
+	snprintf(cUndoText, sizeof(cUndoText), __LOCALIZE_VERFMT("Set track(s) to custom color %d","sws_undo"), iCustColor+1);
 	Undo_OnStateChangeEx(cUndoText, UNDO_STATE_TRACKCFG, -1);
 }
 
@@ -605,7 +617,7 @@ void ItemCustomColor(int iCustColor)
 		}
 	}
 	char cUndoText[100];
-	sprintf(cUndoText, __LOCALIZE_VERFMT("Set item(s) to custom color %d","sws_undo"), iCustColor+1);
+	snprintf(cUndoText, sizeof(cUndoText), __LOCALIZE_VERFMT("Set item(s) to custom color %d","sws_undo"), iCustColor+1);
 	Undo_OnStateChange(cUndoText);
 	UpdateTimeline();
 }
@@ -630,7 +642,7 @@ void TakeCustomColor(int iCustColor)
 		}
 	}
 	char cUndoText[100];
-	sprintf(cUndoText, __LOCALIZE_VERFMT("Set take(s) to custom color %d","sws_undo"), iCustColor+1);
+	snprintf(cUndoText, sizeof(cUndoText), __LOCALIZE_VERFMT("Set take(s) to custom color %d","sws_undo"), iCustColor+1);
 	Undo_OnStateChange(cUndoText);
 	UpdateTimeline();
 }
@@ -1095,23 +1107,23 @@ static void menuhook(const char* menustr, HMENU hMenu, int flag)
 			i++;
 		do
 		{
-			AddToMenu(hSubMenu, __localizeFunc(g_commandTable[i].menuText,"sws_menu",0), g_commandTable[i].accel.accel.cmd);
+			AddToMenuOrdered(hSubMenu, __localizeFunc(g_commandTable[i].menuText,"sws_menu",0), g_commandTable[i].accel.accel.cmd);
 			i++;
 		}
 		while (!(g_commandTable[i-1].doCommand == pLastCommand && g_commandTable[i-1].user == 15));
 
 		// Finish with color dialog
-		AddToMenu(hSubMenu, __localizeFunc(g_commandTable[0].menuText,"sws_menu",0), g_commandTable[0].accel.accel.cmd);
+		AddToMenuOrdered(hSubMenu, __localizeFunc(g_commandTable[0].menuText,"sws_menu",0), g_commandTable[0].accel.accel.cmd);
 
 		if (menuid == 0)
 			AddSubMenu(hMenu, hSubMenu, __LOCALIZE("SWS track color","sws_menu"), 40359);
 		else
 			AddSubMenu(hMenu, hSubMenu, __LOCALIZE("SWS item color","sws_menu"), 40707);
 	}
-#ifdef _WIN32
 	else if (flag == 1)
 	{	// Update the color swatches
 		// Color commands can be anywhere on the menu, so find 'em no matter where
+#ifdef _WIN32
 		static WDL_PtrList<void> pBitmaps;
 		HDC hdcScreen = NULL;
 		HDC hDC = NULL;
@@ -1166,8 +1178,79 @@ static void menuhook(const char* menustr, HMENU hMenu, int flag)
 			DeleteDC(hDC);
 		if (hdcScreen)
 			DeleteDC(hdcScreen);
-	}
+#elif defined(__APPLE__)
+		UpdateCustomColors();
+
+		int iCommand1 = SWSGetCommandID(TrackCustCol, 0);
+		int iCommand2 = SWSGetCommandID(ItemCustCol, 0);
+
+		for (int i = 0; i < 32; i++)
+		{
+			int iPos;
+			HMENU h;
+			if (i < 16)
+				h = FindMenuItem(hMenu, iCommand1 + i, &iPos);
+			else
+				h = FindMenuItem(hMenu, iCommand2 + i - 16, &iPos);
+
+			if (h)
+				SetMenuItemSwatch(h, iPos, 12, g_custColors[i % 16]);
+		}
+#else
+		int iCommand1 = SWSGetCommandID(TrackCustCol, 0);
+		int iCommand2 = SWSGetCommandID(ItemCustCol, 0);
+		static WDL_PtrList<void> pBitmaps;
+
+		const int h = (SWELL_GetScaling256() * 16)/256;
+		const int w = h + 4;
+
+		if (pBitmaps.GetSize() == 0)
+		{
+			unsigned char *bits = (unsigned char *)calloc(w*h,sizeof(int));
+
+			UpdateCustomColors();
+			if (bits)
+			{
+				for (int i = 0; i < 16; i++)
+					pBitmaps.Add(CreateBitmap(w,h,1,32,bits));
+				free(bits);
+			}
+		}
+
+		for (int i = 0; i < 32; i++)
+		{
+			int iPos;
+			HMENU h;
+			if (i < 16)
+				h = FindMenuItem(hMenu, iCommand1 + i, &iPos);
+			else
+				h = FindMenuItem(hMenu, iCommand2 + i-16, &iPos);
+			if (h)
+			{
+				HBITMAP bm = (HBITMAP) pBitmaps.Get(i%16);
+				if (bm)
+				{
+					BITMAP bmi;
+					GetObject(bm,sizeof(bmi),&bmi);
+					if (bmi.bmBits && bmi.bmPlanes == 1 && bmi.bmBitsPixel == 32)
+					{
+						const int n = (bmi.bmWidthBytes * bmi.bmHeight)/4;
+						const int cc = g_custColors[i%16] | 0xFF000000;
+						int *wr = (int *)bmi.bmBits;
+						for (int j=0;j<n; j ++)
+							wr[j] = cc;
+					}
+
+					MENUITEMINFO mi={sizeof(MENUITEMINFO),};
+					mi.fMask = MIIM_BITMAP;
+					mi.hbmpItem = bm;
+					SetMenuItemInfo(h, iPos, true, &mi);
+				}
+			}
+		}
+
 #endif
+	}
 }
 
 int ColorInit()

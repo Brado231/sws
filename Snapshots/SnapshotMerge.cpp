@@ -94,9 +94,9 @@ void SWS_SnapshotMergeView::GetItemText(SWS_ListItem* item, int iCol, char* str,
 		if (GuidsEqual(&mi->m_ts->m_guid, &GUID_NULL))
 			lstrcpyn(str, __LOCALIZE("(master)","sws_DLG_112"), iStrMax);
 		else if (mi->m_ts->m_sName.GetLength())
-			_snprintf(str, iStrMax, "%d: %s", mi->m_ts->m_iTrackNum, mi->m_ts->m_sName.Get());
+			snprintf(str, iStrMax, "%d: %s", mi->m_ts->m_iTrackNum, mi->m_ts->m_sName.Get());
 		else
-			_snprintf(str, iStrMax, "%d", mi->m_ts->m_iTrackNum);
+			snprintf(str, iStrMax, "%d", mi->m_ts->m_iTrackNum);
 		break;
 	case 1:
 		{
@@ -107,9 +107,9 @@ void SWS_SnapshotMergeView::GetItemText(SWS_ListItem* item, int iCol, char* str,
 			{
 				char* cName = (char*)GetSetMediaTrackInfo(mi->m_destTr, "P_NAME", NULL);
 				if (cName && cName[0])
-					_snprintf(str, iStrMax, "%d: %s", iTrack, cName);
+					snprintf(str, iStrMax, "%d: %s", iTrack, cName);
 				else
-					_snprintf(str, iStrMax, "%d", iTrack);
+					snprintf(str, iStrMax, "%d", iTrack);
 			}
 			else if (mi->m_destTr == NULL)
 				lstrcpyn(str, __LOCALIZE("(none)","sws_DLG_112"), iStrMax);
@@ -172,8 +172,7 @@ INT_PTR WINAPI mergeWndProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 			return 0;
 		case WM_CONTEXTMENU:
 		{
-			// 
-			int x = LOWORD(lParam), y = HIWORD(lParam);
+			int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
 			if (mv->DoColumnMenu(x, y))
 				return 0;
 
@@ -197,7 +196,7 @@ INT_PTR WINAPI mergeWndProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 						if (GuidsEqual(&ts->m_guid, &GUID_NULL))
 							strcpy(menuText, __LOCALIZE("(master)","sws_DLG_112"));
 						else if (ts->m_sName.GetLength())
-							_snprintf(menuText, 80, "%d: %s", i, ts->m_sName.Get());
+							snprintf(menuText, 80, "%d: %s", i, ts->m_sName.Get());
 						else
 							sprintf(menuText, "%d", i);
 
@@ -215,7 +214,7 @@ INT_PTR WINAPI mergeWndProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lPara
 					{
 						char* cName = (char*)GetSetMediaTrackInfo(CSurf_TrackFromID(i, false), "P_NAME", NULL);
 						if (cName && cName[0])
-							_snprintf(menuText, 80, "%d: %s", i, cName);
+							snprintf(menuText, 80, "%d: %s", i, cName);
 						else
 							sprintf(menuText, "%d", i);
 						AddToMenu(contextMenu, menuText, i+3);
@@ -487,7 +486,7 @@ bool MergeSnapshots(Snapshot* ss)
 			if (!mi->m_destTr)
 			{
 				for (int j = 0; j < projTracks.GetSize(); j++)
-					if (strcmp((char*)GetSetMediaTrackInfo((MediaTrack*)projTracks.Get(j), "P_NAME", NULL), mi->m_ts->m_sName.Get()) == 0)
+					if (!strncmp((char*)GetSetMediaTrackInfo((MediaTrack*)projTracks.Get(j), "P_NAME", NULL), mi->m_ts->m_sName.Get(), mi->m_ts->m_sName.GetLength()))
 					{
 						mi->m_destTr = (MediaTrack*)projTracks.Get(j);
 						projTracks.Delete(j);

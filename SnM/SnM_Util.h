@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Util.h
 /
-/ Copyright (c) 2012-2013 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -41,10 +41,11 @@ bool IsValidFilenameErrMsg(const char* _fn, bool _errMsg);
 bool FileOrDirExists(const char* _fn);
 bool FileOrDirExistsErrMsg(const char* _fn, bool _errMsg = true);
 bool SNM_DeleteFile(const char* _filename, bool _recycleBin);
+bool SNM_DeletePeakFile(const char* _fn, bool _recycleBin);
 bool SNM_CopyFile(const char* _destFn, const char* _srcFn);
 void RevealFile(const char* _fn, bool _errMsg = true);
 bool BrowseResourcePath(const char* _title, const char* _dir, const char* _fileFilters, char* _fn, int _fnSize, bool _wantFullPath = false);
-void GetShortResourcePath(const char* _resSubDir, const char* _fullFn, char* _shortFn, int _shortFnSize);
+const char* GetShortResourcePath(const char* _resSubDir, const char* _fullFn);
 void GetFullResourcePath(const char* _resSubDir, const char* _shortFn, char* _fullFn, int _fullFnSize);
 bool LoadChunk(const char* _fn, WDL_FastString* _chunkOut, bool _trim = true, int _approxMaxlen = 0);
 bool SaveChunk(const char* _fn, WDL_FastString* _chunk, bool _indent);
@@ -62,14 +63,13 @@ void ExtensionConfigToString(WDL_FastString* _str, ProjectStateContext* _ctx);
 void SaveIniSection(const char* _iniSectionName, WDL_FastString* _iniSection, const char* _iniFn);
 void UpdatePrivateProfileSection(const char* _oldAppName, const char* _newAppName, const char* _iniFn, const char* _newIniFn = NULL);
 void UpdatePrivateProfileString(const char* _appName, const char* _oldKey, const char* _newKey, const char* _iniFn, const char* _newIniFn = NULL);
-void SNM_UpgradeIniFiles();
+void SNM_UpgradeIniFiles(int _iniVersion);
 
-int _snprintfSafe(char* _buf, size_t _n, const char* _fmt, ...);
-int _snprintfStrict(char* _buf, size_t _n, const char* _fmt, ...);
+int snprintfStrict(char* _buf, size_t _n, const char* _fmt, ...);
 bool GetStringWithRN(const char* _bufSrc, char* _buf, int _bufSize);
 const char* FindFirstRN(const char* _str, bool _anyOrder = false);
 char* ShortenStringToFirstRN(char* _str, bool _anyOrder = false);
-void Replace02d(char* _str, char _replaceCh);
+bool ReplaceWithChar(char* _strInOut, const char* _str, const char _replaceCh);
 void SplitStrings(const char* _list, WDL_PtrList<WDL_FastString>* _outItems, const char* _sep = ",");
 
 int SNM_SnapToMeasure(double _pos);
@@ -89,7 +89,10 @@ const char* SNM_GetActionSectionName(int _idx);
 KbdSectionInfo* SNM_GetActionSection(int _idx);
 
 bool LearnAction(KbdSectionInfo* _section, int _cmdId);
-bool GetSectionURL(bool _alr, const char* _section, char* _sectionURL, int _sectionURLSize);
+bool GetSectionURL(bool _alr, KbdSectionInfo* _section, char* _sectionURL, int _sectionURLSize);
+
+// Get/SetMediaItemTakeInfo_Value(*,"D_VOL") uses negative value (sign flip) if take polarity is flipped
+bool IsTakePolarityFlipped(MediaItem_Take* take);
 
 #ifdef _SNM_MISC
 WDL_UINT64 FNV64(WDL_UINT64 h, const unsigned char* data, int sz);

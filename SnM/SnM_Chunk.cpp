@@ -1,9 +1,7 @@
 /******************************************************************************
 / SnM_Chunk.cpp
 /
-/ Some "SAX-ish like" parser classes inheriting SNM_ChunkParserPatcher
-/
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -26,6 +24,10 @@
 / OTHER DEALINGS IN THE SOFTWARE.
 /
 ******************************************************************************/
+
+
+// Some "SAX-ish like" parser classes inheriting SNM_ChunkParserPatcher
+
 
 #include "stdafx.h" 
 #include "SnM.h"
@@ -79,7 +81,7 @@ bool SNM_SendPatcher::NotifyChunkLine(int _mode,
 		// add rcv
 		case -1:
 		{
-			int defSndFlags = *(int*)GetConfigVar("defsendflag");
+			int defSndFlags = *ConfigVar<int>("defsendflag");
 			bool audioSnd = ((defSndFlags & 512) != 512);
 			bool midiSnd =  ((defSndFlags & 256) != 256);
 			_newChunk->AppendFormatted(
@@ -125,7 +127,7 @@ bool SNM_SendPatcher::NotifyChunkLine(int _mode,
 	return update; 
 }
 
-int SNM_SendPatcher::AddReceive(MediaTrack* _srcTr, int _sendType, char* _vol, char* _pan) 
+int SNM_SendPatcher::AddReceive(MediaTrack* _srcTr, int _sendType, const char* _vol, const char* _pan) 
 {
 	m_srcId = _srcTr ? CSurf_TrackToID(_srcTr, false) : -1;
 	if (m_srcId <= 0)
@@ -154,6 +156,7 @@ int SNM_SendPatcher::RemoveReceives() {
 	return RemoveLines("AUXRECV");
 */
 	return RemoveLine("TRACK", "AUXRECV", 1, -1, "MIDIOUT");
+	// REAPER will remove related envelopes, if any
 }
 
 int SNM_SendPatcher::RemoveReceivesFrom(MediaTrack* _srcTr) 
@@ -163,9 +166,10 @@ int SNM_SendPatcher::RemoveReceivesFrom(MediaTrack* _srcTr)
 		return 0;
 /* can fail since v4.1: freeze
 	char buf[32];
-	return _snprintfStrict(buf, sizeof(buf), "AUXRECV %d", srcId-1)>0 && RemoveLines(buf);
+	return snprintfStrict(buf, sizeof(buf), "AUXRECV %d", srcId-1)>0 && RemoveLines(buf);
 */
 	return ParsePatch(-2, 1, "TRACK", "AUXRECV", -1, -1, NULL, NULL, "MIDIOUT");
+	// REAPER will remove related envelopes, if any
 }
 
 
@@ -743,8 +747,8 @@ bool SNM_TrackEnvParserPatcher::NotifyChunkLine(int _mode,
 			int success; double d = _lp->gettoken_float(1, &success);
 			if (success) {
 				d += m_addDelta;
-				char buf[64] = "";
-				int l = _snprintf(buf, sizeof(buf), "%.6f", d);
+				char buf[318]{};
+				int l = snprintf(buf, sizeof(buf), "%.6f", d);
 				if (l<=0 || l>=64) return update;
 				update |= WriteChunkLine(_newChunk, buf, 1, _lp); 
 			}
@@ -918,7 +922,10 @@ bool SNM_TakeEnvParserPatcher::NotifyChunkLine(int _mode,
 	if (_mode == -1)
 	{
 		bool arm = false;
-		updated = (!strcmp(_lp->gettoken_str(0), "ACT") || !strcmp(_lp->gettoken_str(0), "VIS"));
+		if (!m_patchVisibilityOnly)
+			updated = (!strcmp(_lp->gettoken_str(0), "ACT") || !strcmp(_lp->gettoken_str(0), "VIS"));
+		else
+			updated = !strcmp(_lp->gettoken_str(0), "VIS");
 		arm = (strcmp(_lp->gettoken_str(0), "ARM") == 0);
 		updated |= arm;
 		if (updated) {
@@ -934,3 +941,9 @@ bool SNM_TakeEnvParserPatcher::SetVal(const char* _envKeyWord, int _val) {
 	return (ParsePatch(-1, 1, _envKeyWord) > 0);
 }
 
+void SNM_TakeEnvParserPatcher::SetPatchVisibilityOnly(bool visibilityOnly)
+{
+	m_patchVisibilityOnly = visibilityOnly;;
+}
+
+int g_disable_chunk_guid_filtering;

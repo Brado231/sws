@@ -29,16 +29,19 @@
 #include "../SnM/SnM_Dlg.h"
 #include "../SnM/SnM_Util.h"
 #include "../reaper/localize.h"
+#include "WDL/MersenneTwister.h"
 
 using namespace std;
 
+MTRand g_mtrand;
+
 void(*g_KeyUpUndoHandler)()=0;
 
-typedef struct
+struct t_itemposremap_params
 {
 	double dCurve;
-	double *dStoredPositions;
-} t_itemposremap_params;
+	std::vector<double> dStoredPositions;
+};
 
 t_itemposremap_params g_itemposremap_params;
 
@@ -52,10 +55,8 @@ void DoRemapItemPositions(bool bRestorePos)
 	for (int i = 0; i < items.GetSize(); i++)
 	{
 		double dPos = *(double*)GetSetMediaItemInfo(items.Get()[i], "D_POSITION", NULL);
-		if (dPos < dMinTime)
-			dMinTime = dPos;
-		if (dPos > dMaxTime)
-			dMaxTime = dPos;
+		dMinTime = std::min(dPos, dMinTime);
+		dMaxTime = std::max(dPos, dMaxTime);
 	}
 
 	for (int i = 0; i < items.GetSize(); i++)
@@ -88,7 +89,7 @@ WDL_DLGRET ItemPosRemapDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lP
     {
         case WM_INITDIALOG:
 		{
-			char labtxt[256];
+			char labtxt[314];
 			sprintf(labtxt,"%.2f",g_itemposremap_params.dCurve);
 			SetDlgItemText(hwnd,IDC_IPRCURVE,labtxt);
 #ifdef _WIN32
@@ -109,7 +110,7 @@ WDL_DLGRET ItemPosRemapDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lP
 		}
         case WM_HSCROLL:
 		{
-			char TextBuf[128];
+			char TextBuf[314];
 			int SliderPos=(int)SendMessage((HWND)lParam,TBM_GETPOS,0,0);
 			double PosScalFact=.1+1.9*SliderPos/1000.0;
 			sprintf(TextBuf,"%.2f",PosScalFact);
@@ -172,12 +173,11 @@ void DoItemPosRemapDlg(COMMAND_T*)
 	// Save the item positions
 	WDL_TypedBuf<MediaItem*> items;
 	SWS_GetSelectedMediaItems(&items);
-	g_itemposremap_params.dStoredPositions = new double[items.GetSize()];
+	g_itemposremap_params.dStoredPositions.resize(items.GetSize());
 	for (int i = 0; i < items.GetSize(); i++)
 		g_itemposremap_params.dStoredPositions[i] = *(double*)GetSetMediaItemInfo(items.Get()[i], "D_POSITION", NULL);
 
 	DialogBox(g_hInst, MAKEINTRESOURCE(IDD_ITEMPOSREMAP), g_hwndParent, ItemPosRemapDlgProc);
-	delete [] g_itemposremap_params.dStoredPositions;
 }
 
 void ExtractFileNameEx(const char *FullFileName,char *Filename,bool StripExtension)
@@ -217,10 +217,9 @@ void DoItemCueTransform(bool donextcue, int ToCueIndex, bool PreserveItemLen=fal
 	t_cuestruct NewCueStruct;
 	vector<t_cuestruct> VecItemCues;
 
-	MediaItem *CurItem;
-	MediaItem_Take *CurTake;
-	MediaTrack* CurTrack;
-	//REAPER_cue *ItemCues=new REAPER_cue[1000];
+	MediaItem *CurItem = NULL;
+	MediaItem_Take *CurTake = NULL;
+	MediaTrack* CurTrack = NULL;
 	for (int i=0;i<GetNumTracks();i++)
 	{
 		CurTrack=CSurf_TrackFromID(i+1,false);
@@ -238,7 +237,7 @@ void DoItemCueTransform(bool donextcue, int ToCueIndex, bool PreserveItemLen=fal
 				{
 					double TakePlayRate=*(double*)GetSetMediaItemTakeInfo(CurTake,"D_PLAYRATE",NULL);
 					PCM_source *TakeSource=(PCM_source*)GetSetMediaItemTakeInfo(CurTake,"P_SOURCE",NULL);
-					REAPER_cue *CurCue;
+					REAPER_cue *CurCue = NULL;
 					int cueIndx=0;
 					bool morecues=true;
 					while (TakeSource && morecues)
@@ -276,7 +275,6 @@ void DoItemCueTransform(bool donextcue, int ToCueIndex, bool PreserveItemLen=fal
 
 						int CurrentCueIndex=0;
 						double MediaOffset=*(double*)GetSetMediaItemTakeInfo(CurTake,"D_STARTOFFS",NULL);
-						MediaOffset=MediaOffset;
 						for (int idiot=0;idiot<(int)VecItemCues.size();idiot++)
 						{
 							if (MediaOffset>=VecItemCues[idiot].StartTime && MediaOffset<VecItemCues[idiot].EndTime)
@@ -302,7 +300,7 @@ void DoItemCueTransform(bool donextcue, int ToCueIndex, bool PreserveItemLen=fal
 						}
 						if (ToCueIndex==-2) // full random
 						{
-							NewCueIndex=rand() % VecItemCues.size();
+							NewCueIndex=g_mtrand.randInt() % VecItemCues.size();
 						}
 						if (ToCueIndex>=0 && ToCueIndex<(int)VecItemCues.size())
 							NewCueIndex=ToCueIndex;
@@ -325,7 +323,6 @@ void DoItemCueTransform(bool donextcue, int ToCueIndex, bool PreserveItemLen=fal
 	}
 	Undo_OnStateChangeEx(__LOCALIZE("Switch item contents based on cue","sws_undo"),UNDO_STATE_ITEMS,-1);
 	UpdateTimeline();
-	//delete ItemCues;
 }
 
 void DoSwitchItemToNextCue(COMMAND_T*)
@@ -465,7 +462,7 @@ void DoDeleteItemAndMedia(COMMAND_T*)
 					if (CurPCM && CurPCM->GetFileName() && FileExists(CurPCM->GetFileName()) && _stricmp(GetFileExtension(CurPCM->GetFileName()), "rpp"))
 					{
 						char buf[2000];
-						sprintf(buf,__LOCALIZE_VERFMT("Do you really want to immediately delete file (NO UNDO) %s?","sws_mbox"),CurPCM->GetFileName());
+						snprintf(buf,sizeof(buf),__LOCALIZE_VERFMT("Do you really want to immediately delete file (NO UNDO) %s?","sws_mbox"),CurPCM->GetFileName());
 
 						int rc=MessageBox(g_hwndParent,buf,__LOCALIZE("Xenakios - Info","sws_mbox"),MB_OKCANCEL);
 						if (rc==IDOK)
@@ -570,7 +567,7 @@ void DoNukeTakeAndSourceMedia(COMMAND_T*)
 				if (CurPCM && CurPCM->GetFileName() && FileExists(CurPCM->GetFileName()) && _stricmp(GetFileExtension(CurPCM->GetFileName()), "rpp"))
 				{
 					char buf[2000];
-					sprintf(buf,__LOCALIZE_VERFMT("Do you really want to immediately delete file (NO UNDO) %s?","sws_mbox"),CurPCM->GetFileName());
+					snprintf(buf,sizeof(buf),__LOCALIZE_VERFMT("Do you really want to immediately delete file (NO UNDO) %s?","sws_mbox"),CurPCM->GetFileName());
 
 					int rc=MessageBox(g_hwndParent,buf,__LOCALIZE("Xenakios - Info","sws_mbox"),MB_OKCANCEL);
 					if (rc==IDOK)
@@ -720,7 +717,8 @@ void DoSetPrevFadeOutShape(COMMAND_T*)
 
 void DoSetFadeToCrossfade(COMMAND_T* ct)
 {
-	for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(0, i);
 		double AutoFadeIn  = *(double*)GetSetMediaItemInfo(item, "D_FADEINLEN_AUTO",  NULL);
@@ -734,9 +732,10 @@ void DoSetFadeToCrossfade(COMMAND_T* ct)
 
 void DoSetFadeToDefaultFade(COMMAND_T* ct)
 {
-	double* pdDefFade = (double*)GetConfigVar("deffadelen");
+	double* pdDefFade = ConfigVar<double>("deffadelen").get();
 	double dZero = 0.0;
-	for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(0, i);
 		GetSetMediaItemInfo(item, "D_FADEINLEN_AUTO",  &dZero);
@@ -948,15 +947,14 @@ double g_itemseltogprob=0.5;
 vector<MediaItem*> g_vectogSelItems;
 void DoTogSelItemsRandomly(bool isrestore,double togprob)
 {
-	int i;
-	for (i=0;i<(int)g_vectogSelItems.size();i++)
+	for (int i=0;i<(int)g_vectogSelItems.size();i++)
 	{
 		bool uisel=false;
 
 		if (isrestore) uisel=true;
 		if (!isrestore)
 		{
-			double rando=(1.0/RAND_MAX)*rand();
+			double rando = g_mtrand.rand();
 			if (rando<togprob) uisel=true;
 		}
 		GetSetMediaItemInfo(g_vectogSelItems[i],"B_UISEL",&uisel);
@@ -1208,19 +1206,11 @@ void DoShuffleItemOrder(COMMAND_T* ct)
 	XenGetProjectItems(theitems,true,true);
 	vector<double> origtimes;
 	int i;
-	double prevtime=0.0;
 	vector<t_itemorderstruct> vec_yeah;
-	t_itemorderstruct uh;
 	for (i=0;i<(int)theitems.size();i++)
 	{
 		double itempos=*(double*)GetSetMediaItemInfo(theitems[i],"D_POSITION",0);
 		origtimes.push_back(itempos);
-		double deltatime=itempos-prevtime;
-		uh.deltatimepos=deltatime;
-		uh.timepos=itempos;
-		uh.pitem=theitems[i];
-		//vec_yeah.push_back(uh);
-		prevtime=itempos;
 	}
 	MediaItem* pItem=0;
 	i=0;
@@ -1279,7 +1269,7 @@ void DoShuffleItemOrder2(COMMAND_T* ct)
 bool MySortItemsByTimeFunc (MediaItem* i,MediaItem* j)
 {
 	double timea=*(double*)GetSetMediaItemInfo(i,"D_POSITION",0);
-	double timeb=*(double*)GetSetMediaItemInfo(i,"D_POSITION",0);
+	double timeb=*(double*)GetSetMediaItemInfo(j,"D_POSITION",0);
 	return (timea<timeb);
 }
 
@@ -1332,7 +1322,7 @@ void DoSaveItemAsFile1(COMMAND_T*)
 			PCM_source *src=(PCM_source*)GetSetMediaItemTakeInfo(ptake,"P_SOURCE",0);
 			if (src && src->GetFileName())
 			{
-				_snprintf(savedlgtitle, 2048, __LOCALIZE_VERFMT("Save item \"%s\" as","sws_mbox"), (char*)GetSetMediaItemTakeInfo(ptake, "P_NAME", 0));
+				snprintf(savedlgtitle, 2048, __LOCALIZE_VERFMT("Save item \"%s\" as","sws_mbox"), (char*)GetSetMediaItemTakeInfo(ptake, "P_NAME", 0));
 				if (BrowseForSaveFile(savedlgtitle, ppath, NULL, "WAV files\0*.wav\0", newfilename, 512))
 				{
 					Main_OnCommand(40440,0); // set selected media offline
@@ -1380,7 +1370,6 @@ void DoSelectItemUnderEditCursorOnSelTrack(COMMAND_T* _ct)
 
 void DoNormalizeSelTakesTodB(COMMAND_T* ct)
 {
-	// 40108 // normalize takes
 	vector<MediaItem_Take*> seltakes;
 	XenGetProjectTakes(seltakes,true,true);
 	if (seltakes.size()>0)
@@ -1391,14 +1380,15 @@ void DoNormalizeSelTakesTodB(COMMAND_T* ct)
 		{
 			double relgain=atof(buf);
 			Undo_BeginBlock();
-			Main_OnCommand(40108,0);
+			Main_OnCommand(40108,0); // Normalize items
 			int i;
 			for (i=0;i<(int)seltakes.size();i++)
 			{
-				double curgain=*(double*)GetSetMediaItemTakeInfo(seltakes[i],"D_VOL",0);
+				MediaItem_Take* take = seltakes[i];
+				double curgain=abs(*(double*)GetSetMediaItemTakeInfo(take,"D_VOL",0));
 				double newdb=VAL2DB(curgain)+relgain;
-				double newgain=DB2VAL(newdb);
-				GetSetMediaItemTakeInfo(seltakes[i],"D_VOL",&newgain);
+				double newgain=IsTakePolarityFlipped(take) ? -DB2VAL(newdb) : DB2VAL(newdb);
+				GetSetMediaItemTakeInfo(take,"D_VOL",&newgain);
 			}
 			Undo_EndBlock(SWS_CMD_SHORTNAME(ct),0);
 			UpdateTimeline();

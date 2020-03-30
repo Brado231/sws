@@ -199,7 +199,6 @@ COMMAND_T g_XenCommandTable[] =
 	{ { DEFACCEL, "Xenakios/SWS: Render item to new take with tail..." }, "XENAKIOS_RENDERITEMNEWTAKEWITHTAIL", DoRenderItemsWithTail,NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Open associated REAPER project of item" }, "XENAKIOS_OPENASSOCIATED_RPP", DoOpenAssociatedRPP,	NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Take mixer..." }, "XENAKIOS_SHOWTAKEMIXERDLG", DoShowTakeMixerDlg,	NULL, },
-	{ { DEFACCEL, "Xenakios/SWS: Insert random points to selected envelope..." }, "XENAKIOS_CLIPBOARD_TEST1", DoInsertRandomEnvelopePoints,	NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Insert media file from clipboard" }, "XENAKIOS_INSERTMEDIAFROMCLIPBOARD", DoInsertMediaFromClipBoard,NULL, },
 
 	{ { DEFACCEL, "Xenakios/SWS: Erase from item (time based)" }, "XENAKIOS_HOLDKEYTEST1", DoHoldKeyTest1,NULL, },
@@ -309,8 +308,8 @@ COMMAND_T g_XenCommandTable[] =
 	{ { DEFACCEL, "Xenakios/SWS: Shuffle order of selected items (keep relative positions)" }, "XENAKIOS_SHFORDSELITEMS", DoShuffleItemOrder, NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Shuffle order of selected items" }, "XENAKIOS_SHFORDSELITEMS2", DoShuffleItemOrder2, NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Create markers from selected items (name by take source file name)" }, "XENAKIOS_CRTMARKERSFROMITEMS1", DoCreateMarkersFromSelItems1, NULL, },
-	{ { DEFACCEL, "Xenakios/SWS: Rename take source files..." }, "XENAKIOS_RENMTAKESOURCEFLS", DoRenameSourceFileDialog666, NULL, },
-	{ { DEFACCEL, "Xenakios/SWS: Rename takes and source files..." }, "XENAKIOS_RENMTAKEANDSOURCE", DoRenameTakeAndSourceFileDialog, NULL, },
+	{ { DEFACCEL, "Xenakios/SWS: Rename take source files... (no undo)" }, "XENAKIOS_RENMTAKESOURCEFLS", DoRenameSourceFileDialog666, NULL, },
+	{ { DEFACCEL, "Xenakios/SWS: Rename takes and source files... (no undo)" }, "XENAKIOS_RENMTAKEANDSOURCE", DoRenameTakeAndSourceFileDialog, NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Rename takes..." }, "XENAKIOS_RENMTAKE", DoRenameTakeDialog666, NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Rename takes with same name..." }, "XENAKIOS_RENMTAKEALL", DoRenameTakeAllDialog666, NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Save item as audio file..." }, "XENAKIOS_SAVEITEMASAUDIO1", DoSaveItemAsFile1, NULL, },
@@ -336,7 +335,7 @@ COMMAND_T g_XenCommandTable[] =
 	{ { DEFACCEL, "Xenakios/SWS: Set selected track as reference track" }, "XENAKIOS_SETSELTKREFTRACK", DoSetSelTrackAsRefTrack, NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Shift all points in selected envelope to right by 1 second" }, "XEN_ENV_SHIFTRIGHT", DoShiftEnvelope, NULL, 1 },
 	{ { DEFACCEL, "Xenakios/SWS: Shift all points in selected envelope to left by 1 second" }, "XEN_ENV_SHIFTLEFT", DoShiftEnvelope, NULL, -1},
-	{ { DEFACCEL, "Xenakios/SWS: Toggle stop playback at end of time selection" }, "XEN_PREF_STOPATENDLOOP", DoToggleSTopAtEndOfTimeSel, NULL, 0, IsStopAtEndOfTimeSel },
+	{ { DEFACCEL, "Xenakios/SWS: [Deprecated] Toggle stop playback at end of loop" }, "XEN_PREF_STOPATENDLOOP", DoToggleSTopAtEndOfTimeSel, NULL, 0, IsStopAtEndOfTimeSel },
 
 	{ { DEFACCEL, "Xenakios/SWS: Rename project markers with ascending numbers" }, "XEN_RENNMARKERSASCNUMBERS", DoRenameMarkersWithAscendingNumbers, NULL, },
 	{ { DEFACCEL, "Xenakios/SWS: Set fades of selected items to configuration C" }, "XEN_ITEMFADESTOCONF_C", DoFadesOfSelItemsToConfC, NULL, },

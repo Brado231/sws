@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Routing.cpp
 /
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -35,25 +35,18 @@
 
 
 ///////////////////////////////////////////////////////////////////////////////
-// General routing helpers
-///////////////////////////////////////////////////////////////////////////////
-
-//REAPER BUG: tcp/mcp refresh is buggy,
-// see http://forum.cockos.com/project.php?issueid=2642
-// (just to ease replacement the day we can manage that..)
-void RefreshRoutingsUI() {}
-
-
-///////////////////////////////////////////////////////////////////////////////
 // Cut/copy/paste routings + track with routings
+// Note: these functions/actions ignore routing envelopes
 ///////////////////////////////////////////////////////////////////////////////
 
+// lazy here: WDL_PtrList_DOD would have been better but it requires too much updates...
 WDL_PtrList_DeleteOnDestroy<WDL_PtrList_DeleteOnDestroy<SNM_SndRcv> > g_sndTrackClipboard;
 WDL_PtrList_DeleteOnDestroy<WDL_PtrList_DeleteOnDestroy<SNM_SndRcv> > g_rcvTrackClipboard; 
 WDL_PtrList_DeleteOnDestroy<WDL_PtrList_DeleteOnDestroy<SNM_SndRcv> > g_sndClipboard;
 WDL_PtrList_DeleteOnDestroy<WDL_PtrList_DeleteOnDestroy<SNM_SndRcv> > g_rcvClipboard;
 
-void FlushClipboard(WDL_PtrList_DeleteOnDestroy<WDL_PtrList_DeleteOnDestroy<SNM_SndRcv> >* _clipboard) {
+void FlushClipboard(WDL_PtrList_DeleteOnDestroy<WDL_PtrList_DeleteOnDestroy<SNM_SndRcv> >* _clipboard)
+{
 	if (_clipboard)
 		_clipboard->Empty(true);
 }
@@ -187,7 +180,6 @@ void CutWithIOs(COMMAND_T* _ct)
 		Undo_BeginBlock2(NULL);
 		CopySendsReceives(true, &trs, &g_sndTrackClipboard, &g_rcvTrackClipboard); // true: do no copy routings between sel. tracks
 		Main_OnCommand(40337, 0); // cut sel tracks
-		RefreshRoutingsUI();
 		Undo_EndBlock2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL);
 	}
 }
@@ -204,7 +196,6 @@ void PasteWithIOs(COMMAND_T* _ct)
 			SNM_GetSelectedTracks(NULL, &trs, false);
 			PasteSendsReceives(&trs, &g_sndTrackClipboard, &g_rcvTrackClipboard, NULL); // false: we keep intra routings between pasted tracks, see above
 		}
-		RefreshRoutingsUI();
 		Undo_EndBlock2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL);
 	}
 }
@@ -231,20 +222,16 @@ void CutRoutings(COMMAND_T* _ct)
 		updated |= RemoveReceives(&trs, &ps);
 		ps.Empty(true); // auto-commit, if needed
 	}
-	if (updated) {
-		RefreshRoutingsUI();
+	if (updated)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 void PasteRoutings(COMMAND_T* _ct)
 {
 	WDL_PtrList<MediaTrack> trs;
 	SNM_GetSelectedTracks(NULL, &trs, false);
-	if (trs.GetSize() && PasteSendsReceives(&trs, &g_sndClipboard, &g_rcvClipboard, NULL)) {
-		RefreshRoutingsUI();
+	if (trs.GetSize() && PasteSendsReceives(&trs, &g_sndClipboard, &g_rcvClipboard, NULL))
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 // sends cut copy/paste
@@ -265,20 +252,16 @@ void CutSends(COMMAND_T* _ct)
 		CopySendsReceives(false, &trs, &g_sndClipboard, NULL);
 		updated |= RemoveSends(&trs, NULL);
 	}
-	if (updated) {
-		RefreshRoutingsUI();
+	if (updated)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 void PasteSends(COMMAND_T* _ct)
 {
 	WDL_PtrList<MediaTrack> trs;
 	SNM_GetSelectedTracks(NULL, &trs, false);
-	if (trs.GetSize() && PasteSendsReceives(&trs, &g_sndClipboard, NULL, NULL)) {
-		RefreshRoutingsUI();
+	if (trs.GetSize() && PasteSendsReceives(&trs, &g_sndClipboard, NULL, NULL))
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 // receives cut copy/paste
@@ -299,20 +282,16 @@ void CutReceives(COMMAND_T* _ct)
 		CopySendsReceives(false, &trs, NULL, &g_rcvClipboard);
 		updated |= RemoveReceives(&trs, NULL);
 	}
-	if (updated) {
-		RefreshRoutingsUI();
+	if (updated)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 void PasteReceives(COMMAND_T* _ct)
 {
 	WDL_PtrList<MediaTrack> trs;
 	SNM_GetSelectedTracks(NULL, &trs, false);
-	if (trs.GetSize() && PasteSendsReceives(&trs, NULL, &g_rcvClipboard, NULL)) {
-		RefreshRoutingsUI();
+	if (trs.GetSize() && PasteSendsReceives(&trs, NULL, &g_rcvClipboard, NULL))
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 
@@ -350,10 +329,8 @@ void RemoveSends(COMMAND_T* _ct)
 	SNM_GetSelectedTracks(NULL, &trs, false);
 	if (trs.GetSize())
 		updated = RemoveSends(&trs, NULL);
-	if (updated) {
-		RefreshRoutingsUI();
+	if (updated)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 // primitive
@@ -382,10 +359,8 @@ void RemoveReceives(COMMAND_T* _ct)
 	SNM_GetSelectedTracks(NULL, &trs, false);
 	if (trs.GetSize())
 		updated = RemoveReceives(&trs, NULL);
-	if (updated) {
-		RefreshRoutingsUI();
+	if (updated)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1);
-	}
 }
 
 void RemoveRoutings(COMMAND_T* _ct)
@@ -400,10 +375,8 @@ void RemoveRoutings(COMMAND_T* _ct)
 		updated |= RemoveReceives(&trs, &ps);
 		ps.Empty(true); // auto-commit, if needed
 	}
-	if (updated) {
-		RefreshRoutingsUI();
+	if (updated)
 		Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(_ct), UNDO_STATE_ALL, -1); 
-	}
 }
 
 
@@ -411,35 +384,43 @@ void RemoveRoutings(COMMAND_T* _ct)
 // ReaScript export
 ///////////////////////////////////////////////////////////////////////////////
 
+// _type -1=Default type (user preferences), 0=Post-Fader (Post-Pan), 1=Pre-FX, 2=deprecated, 3=Pre-Fader (Post-FX)
 bool SNM_AddReceive(MediaTrack* _srcTr, MediaTrack* _destTr, int _type)
 {
+	bool ok=false;
+	PreventUIRefresh(1);
 	if (_srcTr && _destTr && _srcTr!=_destTr && _type<=3)
 	{
-		SNM_SendPatcher p = SNM_SendPatcher(_destTr);
-		char vol[32] = "1.00000000000000";
-		char pan[32] = "0.00000000000000";
-		_snprintfSafe(vol, sizeof(vol), "%.14f", *(double*)GetConfigVar("defsendvol"));
-		return (p.AddReceive(_srcTr, _type<0 ? *(int*)GetConfigVar("defsendflag")&0xFF : _type, vol, pan) > 0);
+		int idx=CreateTrackSend(_srcTr, _destTr);
+		if (idx>=0 && _type>=0) GetSetTrackSendInfo(_srcTr, 0, idx, "I_SENDMODE", (void*)&_type);
+		ok = (idx>=0);
 	}
-	return false;
+	PreventUIRefresh(-1);
+	return ok;
 }
 
 bool SNM_RemoveReceive(MediaTrack* _tr, int _rcvIdx)
 {
-	if (_tr && _rcvIdx>=0) 	{
-		SNM_ChunkParserPatcher p(_tr);
-		return p.RemoveLine("TRACK", "AUXRECV", 1, _rcvIdx, "MIDIOUT");
-	}
-	return false;
+	return RemoveTrackSend(_tr, -1, _rcvIdx);
 }
 
 bool SNM_RemoveReceivesFrom(MediaTrack* _tr, MediaTrack* _srcTr)
 {
-	if (_tr && _srcTr) {
-		SNM_SendPatcher p(_tr); 
-		return (p.RemoveReceivesFrom(_srcTr) > 0);
+	bool updated = false;
+	if (const int count = GetTrackNumSends(_tr, -1))
+	{
+		MediaTrack* src;
+		int idx = count-1;
+    
+		PreventUIRefresh(1);
+		while (idx>=0 && (src = (MediaTrack*)GetSetTrackSendInfo(_tr, -1, idx, "P_SRCTRACK", NULL)))
+		{
+			if (src == _srcTr) updated |= RemoveTrackSend(_tr, -1, idx);
+			idx--;
+		}
+		PreventUIRefresh(-1);
 	}
-	return false;
+	return updated;
 }
 
 
@@ -451,19 +432,18 @@ bool SNM_RemoveReceivesFrom(MediaTrack* _tr, MediaTrack* _srcTr)
 int g_defSndFlags = -1;
 
 void SaveDefaultTrackSendPrefs(COMMAND_T*) {
-	if (int* flags = (int*)GetConfigVar("defsendflag"))
+	if (const ConfigVar<int> flags = "defsendflag")
 		g_defSndFlags = *flags;
 }
 
 void RecallDefaultTrackSendPrefs(COMMAND_T*) {
 	if (g_defSndFlags>=0)
-		if (int* flags = (int*)GetConfigVar("defsendflag"))
-			*flags = g_defSndFlags;
+		ConfigVar<int>("defsendflag").try_set(g_defSndFlags);
 }
 
 // flags != _ct->user because of the weird state of midi+audio which is not 0x300 but 0 (!)
 void SetDefaultTrackSendPrefs(COMMAND_T* _ct) {
-	if (int* flags = (int*)GetConfigVar("defsendflag")) {
+	if (ConfigVar<int> flags = "defsendflag") {
 		switch((int)_ct->user) {
 			case 0: *flags&=0xFF; break; // both
 			case 1: *flags&=0xF0FF; *flags|=0x100; break; // audio

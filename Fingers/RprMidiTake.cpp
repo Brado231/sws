@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "../reaper/localize.h"
-#include "../../WDL/ptrlist.h"
+#include "WDL/ptrlist.h"
 
 #include <algorithm>
 
@@ -14,7 +14,7 @@
 #include "TimeMap.h"
 #include "RprException.h"
 
-WDL_PtrList_DeleteOnDestroy<RprMidiTake> g_script_miditakes; // just to validate function parameters
+WDL_PtrList_DOD<RprMidiTake> g_script_miditakes; // just to validate function parameters
 
 RprMidiTake* FNG_AllocMidiTake(MediaItem_Take* take)
 {
@@ -41,7 +41,7 @@ int FNG_CountMidiNotes(RprMidiTake* midiTake)
     {
         return midiTake->countNotes();
     }
-    return NULL;
+    return 0;
 }
 
 // Get MIDI note from MIDI take at specified index

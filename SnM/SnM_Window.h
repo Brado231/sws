@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Window.h
 /
-/ Copyright (c) 2012-2013 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -47,24 +47,23 @@ void ShowThemeHelper(COMMAND_T*);
 HWND GetActionListBox(char* _currentSection, int _sectionSz);
 int GetSelectedAction(char* _section, int _secSize, int* _cmdId, char* _id, int _idSize, char* _desc = NULL, int _descSize = -1);
 bool GetSelectedAction(char* _idstrOut, int _idStrSz, KbdSectionInfo* _expectedSection = NULL);
-void DumpWikiActionList(COMMAND_T*);
-void DumpActionList(COMMAND_T*);
 
 void ShowFXChain(COMMAND_T*);
 void HideFXChain(COMMAND_T*);
 void ToggleFXChain(COMMAND_T*);
 int IsToggleFXChain(COMMAND_T*);
 void ShowAllFXChainsWindows(COMMAND_T*);
-void CloseAllFXChainsWindows(COMMAND_T*);
+void CloseAllFXChainsWindows(COMMAND_T*); // NF: includes take FX
 void ToggleAllFXChainsWindows(COMMAND_T*);
 
 void FloatUnfloatFXs(MediaTrack* _tr, bool _all, int _showFlag, int _fx, bool _selTracks);
+void FloatUnfloatTakeFXs(MediaTrack* _tr, bool _all, int _showFlag, int _fx, bool _selTracks);
 void FloatFX(COMMAND_T*);
 void UnfloatFX(COMMAND_T*);
 void ToggleFloatFX(COMMAND_T*);
 void ShowAllFXWindows(COMMAND_T*);
-void CloseAllFXWindows(COMMAND_T*);
-void CloseAllFXWindowsExceptFocused(COMMAND_T*);
+void CloseAllFXWindows(COMMAND_T*); // NF: includes take FX
+void CloseAllFXWindowsExceptFocused(COMMAND_T*); // NF: includes take FX
 void ToggleAllFXWindows(COMMAND_T*);
 int GetFocusedTrackFXWnd(MediaTrack* _tr);
 int GetFirstTrackFXWnd(MediaTrack* _tr, int _dir);

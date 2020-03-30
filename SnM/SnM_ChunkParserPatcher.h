@@ -1,6 +1,7 @@
 /******************************************************************************
 / SnM_ChunkParserPatcher.h - v1.34
-/ Copyright (c) 2008-2013 Jeffos
+/
+/ Copyright (c) 2008 and later Jeffos
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -39,13 +40,15 @@
 // Important: 
 // - Chunks can be HUGE! e.g. 4Mb+ is an usual case
 // - The code assumes RPP chunks are consistent, left trimmed, with Unix EOL
-// - A v2.0 with major refactoring is on the way..
+// - A v2.0 with major refactoring is on the way
 
 
 #ifndef _SNM_CHUNKPARSERPATCHER_H_
 #define _SNM_CHUNKPARSERPATCHER_H_
 
+#ifndef __GNUC__
 #pragma warning(disable : 4267) // size_t to int warnings in x64
+#endif
 
 #define _SWS_EXTENSION
 #ifdef _SWS_EXTENSION
@@ -477,7 +480,7 @@ const char* SNM_GetSetObjectState(void* _obj, WDL_FastString* _str)
 #endif
 #ifdef _SNM_DEBUG
 	char fn[SNM_MAX_PATH] = "";
-	int l = _snprintf(fn, sizeof(fn), "%s%cSNM_CPP_last%s.log", GetExePath(), PATH_SLASH_CHAR, _str ? "Set" : "Get");
+	int l = snprintf(fn, sizeof(fn), "%s%cSNM_CPP_last%s.log", GetExePath(), PATH_SLASH_CHAR, _str ? "Set" : "Get");
 	if (l>0 && l<SNM_MAX_PATH)
 		if (FILE* f = fopenUTF8(fn, "w")) {
 			fputs(_str ? _str->Get() : (p?p:"NULL"), f);
@@ -826,7 +829,7 @@ int ParsePatchCore(
 						case SNM_TOGGLE_CHUNK_INT:
 						{
 							char bufConv[16] = "";
-							int l = _snprintf(bufConv, sizeof(bufConv), "%d", !lp.gettoken_int(_tokenPos));
+							int l = snprintf(bufConv, sizeof(bufConv), "%d", !lp.gettoken_int(_tokenPos));
 							if (l<=0 || l>=16) break;
 							alter |= WriteChunkLine(newChunk, bufConv, _tokenPos, &lp); 
 							m_breakParsePatch = (_occurence != -1);
@@ -869,8 +872,8 @@ int ParsePatchCore(
 							if (success) {
 								if (_mode == SNM_D_ADD) d += *(double*)_value;
 								else d *= *(double*)_value;
-								char bufConv[64] = "";
-								int l = _snprintf(bufConv, sizeof(bufConv), "%.14f", d);
+								char bufConv[326]{};
+								int l = snprintf(bufConv, sizeof(bufConv), "%.14f", d);
 								if (l<=0 || l>=64) break;
 								alter |= WriteChunkLine(newChunk, bufConv, _tokenPos, &lp); 
 								m_breakParsePatch = (_occurence != -1);
@@ -901,7 +904,7 @@ int ParsePatchCore(
 						case SNM_TOGGLE_CHUNK_INT_EXCEPT:
 						{
 							char bufConv[16] = "";
-							int l = _snprintf(bufConv, sizeof(bufConv), "%d", !lp.gettoken_int(_tokenPos));
+							int l = snprintf(bufConv, sizeof(bufConv), "%d", !lp.gettoken_int(_tokenPos));
 							if (l<=0 || l>=16) break;
 							alter |= WriteChunkLine(newChunk, bufConv, _tokenPos, &lp); 
 						}
@@ -1093,16 +1096,18 @@ static const char* FindKeyword(const char* _chunk) {
 // Other static helpers
 ///////////////////////////////////////////////////////////////////////////////
 
+extern int g_disable_chunk_guid_filtering;
 static int SNM_PreObjectState(WDL_FastString* _str, bool _wantsMinState)
 {
 	// when altering: remove all ids 
 	if (_str)
 	{
-		RemoveAllIds(_str);
+		if (!g_disable_chunk_guid_filtering)
+			RemoveAllIds(_str);
 	}
 	// when getting: enables/disables the "VST full state" pref (that also minimize AU states, if REAPER >= v4)
 	// it also fixes possible incomplete chunk bug (pref overrided when needed)
-	else if (int* fxstate = (int*)GetConfigVar("vstfullstate")) {
+	else if (ConfigVar<int> fxstate = "vstfullstate") {
 		int old = *fxstate;
 		int tmp = _wantsMinState ? *fxstate&0xFFFFFFFE : *fxstate|1;
 		if (old != tmp) // prevents useless RW access to REAPER.ini
@@ -1116,7 +1121,7 @@ static void SNM_PostObjectState(int _oldfxstate)
 {
 	// restore the "VST full state" pref, if needed
 	if (_oldfxstate >= 0)
-		if (int* fxstate = (int*)GetConfigVar("vstfullstate"))
+		if (ConfigVar<int> fxstate = "vstfullstate")
 			if (*fxstate != _oldfxstate)
 				*fxstate = _oldfxstate;
 }

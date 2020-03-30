@@ -1,9 +1,7 @@
 /******************************************************************************
 / SnM_Chunk.h
 / 
-/ Some "SAX-ish like" parser classes inheriting SNM_ChunkParserPatcher
-/
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -26,6 +24,10 @@
 / OTHER DEALINGS IN THE SOFTWARE.
 /
 ******************************************************************************/
+
+
+// Some "SAX-ish like" parser classes inheriting SNM_ChunkParserPatcher
+
 
 //#pragma once
 
@@ -71,7 +73,7 @@ public:
 		m_sndRcv = NULL;
 	}
 	~SNM_SendPatcher() {}
-	int AddReceive(MediaTrack* _srcTr, int _sendType, char* _vol, char* _pan);
+	int AddReceive(MediaTrack* _srcTr, int _sendType, const char* _vol, const char* _pan);
 	bool AddReceive(MediaTrack* _srcTr, void* _io);
 	int RemoveReceives();
 	int RemoveReceivesFrom(MediaTrack* _srcTr);
@@ -84,8 +86,8 @@ protected:
 
 	int m_srcId;
 	int m_sendType;
-	char* m_vol;
-	char* m_pan;
+	const char* m_vol;
+	const char* m_pan;
 	void* m_sndRcv;
 };
 
@@ -351,6 +353,7 @@ class SNM_FXSummaryParser : public SNM_ChunkParserPatcher
 {
 public:
 	SNM_FXSummaryParser(MediaTrack* _tr) : SNM_ChunkParserPatcher(_tr) { SetWantsMinimalState(true); }
+	SNM_FXSummaryParser(MediaItem* _item) : SNM_ChunkParserPatcher(_item) { SetWantsMinimalState(true); }
 	SNM_FXSummaryParser(WDL_FastString* _str) : SNM_ChunkParserPatcher(_str) {}
 	~SNM_FXSummaryParser() {}
 	WDL_PtrList<SNM_FXSummary>* GetSummaries();
@@ -371,9 +374,12 @@ class SNM_TakeEnvParserPatcher : public SNM_ChunkParserPatcher
 {
 public:
 	SNM_TakeEnvParserPatcher(WDL_FastString* _tkChunk, bool _autoCommit = true) 
-		: SNM_ChunkParserPatcher(_tkChunk, _autoCommit) {m_val = -1;}
+		: SNM_ChunkParserPatcher(_tkChunk, _autoCommit) {m_val = -1; m_patchVisibilityOnly = false;}
 	~SNM_TakeEnvParserPatcher() {}
 	bool SetVal(const char* _envKeyWord, int _val);
+	// NF: #1078, if true, only env. visibilty (show/hide) is patched
+	// (as opposed to also patching env. unbypass/bypass, resp. active/not active)
+	void SetPatchVisibilityOnly(bool patchVisibilityOnly); 
 protected:
 	bool NotifyChunkLine(int _mode, 
 		LineParser* _lp, const char* _parsedLine, int _linePos,
@@ -381,6 +387,7 @@ protected:
 		WDL_FastString* _newChunk, int _updates);
 private:
 	int m_val;
+	bool m_patchVisibilityOnly;
 };
 
 #endif

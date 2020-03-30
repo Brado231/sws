@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Find.cpp
 /
-/ Copyright (c) 2010-2013 Jeffos
+/ Copyright (c) 2010 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -45,7 +45,7 @@
 #define MAX_SEARCH_STR_LEN		128
 
 enum {
-  TXTID_SCOPE=2000, //JFB would be great to have _APS_NEXT_CONTROL_VALUE *always* defined
+  TXTID_SCOPE=0xF000,
   BTNID_FIND,
   BTNID_PREV,
   BTNID_NEXT,
@@ -208,7 +208,7 @@ void FindWnd::OnDestroy()
 {
 	// save prefs
 	char type[4] = "";
-	if (_snprintfStrict(type, sizeof(type), "%d", m_type) > 0)
+	if (snprintfStrict(type, sizeof(type), "%d", m_type) > 0)
 		WritePrivateProfileString(FIND_INI_SEC, "Type", type, g_SNM_IniFn.Get());
 	WritePrivateProfileString(FIND_INI_SEC, "ZoomScrollToFoundItems", m_zoomSrollItems ? "1" : "0", g_SNM_IniFn.Get());
 
@@ -330,15 +330,15 @@ void FindWnd::DrawControls(LICE_IBitmap* _bm, const RECT* _r, int* _tooltipHeigh
 	int y0 = _r->top+56;
 
 	SNM_SkinToolbarButton(&m_btnFind, __LOCALIZE("Find all","sws_DLG_154"));
-	m_btnFind.SetGrayed(!g_searchStr || !(*g_searchStr) || m_type == TYPE_MARKER_REGION);
+	m_btnFind.SetGrayed(!*g_searchStr || m_type == TYPE_MARKER_REGION);
 	if (SNM_AutoVWndPosition(DT_LEFT, &m_btnFind, NULL, _r, &x0, y0, h, 4))
 	{
 		SNM_SkinToolbarButton(&m_btnPrev, __LOCALIZE("Previous","sws_DLG_154"));
-		m_btnPrev.SetGrayed(!g_searchStr || !(*g_searchStr));
+		m_btnPrev.SetGrayed(!*g_searchStr);
 		if (SNM_AutoVWndPosition(DT_LEFT, &m_btnPrev, NULL, _r, &x0, y0, h, 4))
 		{
 			SNM_SkinToolbarButton(&m_btnNext, __LOCALIZE("Next","sws_DLG_154"));
-			m_btnNext.SetGrayed(!g_searchStr || !(*g_searchStr));
+			m_btnNext.SetGrayed(!*g_searchStr);
 			SNM_AutoVWndPosition(DT_LEFT, &m_btnNext, NULL, _r, &x0, y0, h);
 		}
 	}
@@ -419,7 +419,7 @@ MediaItem* FindWnd::FindPrevNextItem(int _dir, MediaItem* _item)
 bool FindWnd::FindMediaItem(int _dir, bool _allTakes, bool (*jobTake)(MediaItem_Take*,const char*), bool (*jobItem)(MediaItem*,const char*))
 {
 	bool update = false, found = false, sel = true;
-	if (g_searchStr && *g_searchStr)
+	if (*g_searchStr)
 	{
 		PreventUIRefresh(1);
 
@@ -528,13 +528,13 @@ bool FindWnd::FindMediaItem(int _dir, bool _allTakes, bool (*jobTake)(MediaItem_
 bool FindWnd::FindTrack(int _dir, bool (*job)(MediaTrack*,const char*))
 {
 	bool update = false, found = false;
-	if (g_searchStr && *g_searchStr)
+	if (*g_searchStr)
 	{
 		int startTrIdx = -1;
 		bool clearCurrentSelection = false;
 		if (_dir)
 		{
-			if (int selTracksCount = SNM_CountSelectedTracks(NULL, true))
+			if (const int selTracksCount = SNM_CountSelectedTracks(NULL, true))
 			{
 				if (MediaTrack* startTr = SNM_GetSelectedTrack(NULL, _dir > 0 ? 0 : selTracksCount-1, true))
 				{
@@ -597,7 +597,7 @@ bool FindWnd::FindMarkerRegion(int _dir)
 		return false;
 
 	bool update = false, found = false;
-	if (g_searchStr && *g_searchStr)
+	if (*g_searchStr)
 	{
 		double startPos = GetCursorPositionEx(NULL);
 		int id, x = 0;

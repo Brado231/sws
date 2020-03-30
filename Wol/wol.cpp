@@ -1,9 +1,9 @@
 /******************************************************************************
 / wol.cpp
 /
-/ Copyright (c) 2014-2015 wol
+/ Copyright (c) 2014 and later wol
 / http://forum.cockos.com/member.php?u=70153
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -72,6 +72,23 @@ static COMMAND_T g_commandTable[] =
 		{ { DEFACCEL, "SWS/wol: Full zoom selected envelope (in media lane only) to lower half in time selection" }, "WOL_FZOOMSELENVLOHTIMESEL", ZoomSelectedEnvelopeTimeSelection, NULL, 3 },
 		{ { DEFACCEL, "SWS/wol: Vertical zoom selected envelope (in media lane only) to upper half" }, "WOL_VZOOMSELENVUPH", VerticalZoomSelectedEnvelopeLoUpHalf, NULL, 0 },
 		{ { DEFACCEL, "SWS/wol: Vertical zoom selected envelope (in media lane only) to lower half" }, "WOL_VZOOMSELENVLOH", VerticalZoomSelectedEnvelopeLoUpHalf, NULL, 1 },
+
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 1" }, "WOL_SAVEHSELENVSLOT1", SaveApplyHeightSelectedEnvelopeSlot, NULL, 0 },
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 2" }, "WOL_SAVEHSELENVSLOT2", SaveApplyHeightSelectedEnvelopeSlot, NULL, 1 },
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 3" }, "WOL_SAVEHSELENVSLOT3", SaveApplyHeightSelectedEnvelopeSlot, NULL, 2 },
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 4" }, "WOL_SAVEHSELENVSLOT4", SaveApplyHeightSelectedEnvelopeSlot, NULL, 3 },
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 5" }, "WOL_SAVEHSELENVSLOT5", SaveApplyHeightSelectedEnvelopeSlot, NULL, 4 },
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 6" }, "WOL_SAVEHSELENVSLOT6", SaveApplyHeightSelectedEnvelopeSlot, NULL, 5 },
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 7" }, "WOL_SAVEHSELENVSLOT7", SaveApplyHeightSelectedEnvelopeSlot, NULL, 6 },
+		{ { DEFACCEL, "SWS/wol: Save height of selected envelope, slot 8" }, "WOL_SAVEHSELENVSLOT8", SaveApplyHeightSelectedEnvelopeSlot, NULL, 7 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 1" }, "WOL_APPHSELENVSLOT1", SaveApplyHeightSelectedEnvelopeSlot, NULL, 8 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 2" }, "WOL_APPHSELENVSLOT2", SaveApplyHeightSelectedEnvelopeSlot, NULL, 9 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 3" }, "WOL_APPHSELENVSLOT3", SaveApplyHeightSelectedEnvelopeSlot, NULL, 10 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 4" }, "WOL_APPHSELENVSLOT4", SaveApplyHeightSelectedEnvelopeSlot, NULL, 11 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 5" }, "WOL_APPHSELENVSLOT5", SaveApplyHeightSelectedEnvelopeSlot, NULL, 12 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 6" }, "WOL_APPHSELENVSLOT6", SaveApplyHeightSelectedEnvelopeSlot, NULL, 13 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 7" }, "WOL_APPHSELENVSLOT7", SaveApplyHeightSelectedEnvelopeSlot, NULL, 14 },
+		{ { DEFACCEL, "SWS/wol: Apply height to selected envelope, slot 8" }, "WOL_APPHSELENVSLOT8", SaveApplyHeightSelectedEnvelopeSlot, NULL, 15 },
 
 
 	///////////////////////////////////////////////////////////////////////////////////////////////////

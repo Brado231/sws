@@ -84,7 +84,7 @@ void SWS_TrackListView::GetItemText(SWS_ListItem* item, int iCol, char* str, int
 		switch (iCol)
 		{
 		case COL_NUM: // #
-			_snprintf(str, iStrMax, "%d", CSurf_TrackToID(tr, false));
+			snprintf(str, iStrMax, "%d", CSurf_TrackToID(tr, false));
 			break;
 		case COL_NAME: // Name
 			lstrcpyn(str, (char*)GetSetMediaTrackInfo(tr, "P_NAME", NULL), iStrMax);
@@ -105,7 +105,7 @@ void SWS_TrackListView::GetItemText(SWS_ListItem* item, int iCol, char* str, int
 			lstrcpyn(str, *(int*)GetSetMediaTrackInfo(tr, "I_SOLO", NULL) ? UTF8_BULLET : UTF8_CIRCLE, iStrMax);
 			break;
 //		case COL_INPUT:
-//			_snprintf(str, iStrMax, "%d", *(int*)GetSetMediaTrackInfo(tr, "I_RECINPUT", NULL) + 1);
+//			snprintf(str, iStrMax, "%d", *(int*)GetSetMediaTrackInfo(tr, "I_RECINPUT", NULL) + 1);
 //			break;
 		}
 	}
@@ -170,8 +170,8 @@ void SWS_TrackListView::OnItemSelChanged(SWS_ListItem* item, int iState)
 	MediaTrack* tr = (MediaTrack*)item;
 	if (iState & LVIS_FOCUSED)
 		g_pList->m_trLastTouched = tr;
-	if ((iState & LVIS_SELECTED ? true : false) != (*(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL) ? true : false))
-		GetSetMediaTrackInfo(tr, "I_SELECTED", iState & LVIS_SELECTED ? &g_i1 : &g_i0);
+	if (!!(iState & LVIS_SELECTED) != !!(*(int*)GetSetMediaTrackInfo(tr, "I_SELECTED", NULL)))
+		GetSetMediaTrackInfo(tr, "I_SELECTED", (iState & LVIS_SELECTED) ? &g_i1 : &g_i0);
 }
 
 void SWS_TrackListView::SetItemText(SWS_ListItem* item, int iCol, const char* str)
@@ -315,7 +315,7 @@ HMENU SWS_TrackListWnd::OnContextMenu(int x, int y, bool* wantDefaultItems)
 			int iCmd = SWSGetCommandID(GetSnapshot, s->m_iSlot);
 			if (!iCmd)
 				iCmd = LOADSNAP_MSG + s->m_iSlot;
-			_snprintf(cMenu, 50, __LOCALIZE_VERFMT("Recall snapshot %s","tracklistmenu"), s->m_cName);
+			snprintf(cMenu, 50, __LOCALIZE_VERFMT("Recall snapshot %s","tracklistmenu"), s->m_cName);
 			AddToMenu(contextMenu, cMenu, iCmd);
 		}
 	}
@@ -364,8 +364,8 @@ void SWS_TrackListWnd::OnDestroy()
 
 	KillTimer(m_hwnd, 1);
 
-	char str[10];
-	_snprintf(str, 10, "%d %d", m_bHideFiltered ? 1 : 0, m_bLink ? 1 : 0);
+	char str[24];
+	snprintf(str, sizeof(str), "%d %d", m_bHideFiltered ? 1 : 0, m_bLink ? 1 : 0);
 	WritePrivateProfileString(SWS_INI, m_cOptionsKey, str, get_ini_file());
 }
 
@@ -391,8 +391,21 @@ int SWS_TrackListWnd::OnKey(MSG* msg, int iKeyState)
 			TogInMCP();
 			return 1;
 		case VK_DELETE:
-			Main_OnCommand(40005, 0); // remove selected tracks
-			return 1;
+		{
+			// #1119, don't block Del key in Filter textbox
+			HWND h = GetDlgItem(m_hwnd, IDC_FILTER);
+#ifdef _WIN32
+			if (msg->hwnd == h)
+#else
+			if (GetFocus() == h)
+#endif
+				return 0;
+			else
+			{
+				Main_OnCommand(40005, 0); // remove selected tracks
+				return 1;
+			}
+		}
 		case VK_F2:
 			OnCommand(RENAME_MSG, 0);
 			return 1;

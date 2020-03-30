@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2013-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -68,8 +68,9 @@ static int  g_mousePlaybackReaperOptions    = 0;
 
 static void MousePlaybackTimer ()
 {
-	PreventUIRefresh(-1);
-	SetConfig("viewadvance", g_mousePlaybackReaperOptions);
+	// do not do this, it is generally unsafe: PreventUIRefresh(-1);
+	// (is this timer necessary with this removed?)
+	ConfigVar<int>("viewadvance").try_set(g_mousePlaybackReaperOptions);
 	plugin_register("-timer", (void*)MousePlaybackTimer);
 }
 
@@ -83,7 +84,7 @@ static void MousePlaybackPlayState (bool play, bool pause, bool rec)
 	{
 		if (g_mousePlaybackRestoreView && g_activeCommand && (int)g_activeCommand->user > 0)
 		{
-			GetConfig("viewadvance", g_mousePlaybackReaperOptions);
+			g_mousePlaybackReaperOptions = ConfigVar<int>("viewadvance").value_or(0);
 			if (GetBit(g_mousePlaybackReaperOptions, 3))
 				g_mousePlaybackForceMoveView = true;
 		}
@@ -95,8 +96,11 @@ static void MousePlaybackPlayState (bool play, bool pause, bool rec)
 		{
 			g_mousePlaybackForceMoveView = false;
 
-			PreventUIRefresh(1);
-			SetConfig("viewadvance", ClearBit(g_mousePlaybackReaperOptions, 3));
+			// see https://forum.cockos.com/showthread.php?t=224214
+			//do not do this, it is generally unsafe: PreventUIRefresh(1);
+
+
+			ConfigVar<int>("viewadvance").try_set(g_mousePlaybackReaperOptions);
 			plugin_register("timer", (void*)MousePlaybackTimer);
 		}
 	}
@@ -172,6 +176,9 @@ static bool MousePlaybackInit (COMMAND_T* ct, bool init)
 				return false;
 
 			int count = CountTracks(s_proj);
+			// check if 'Prefs (-> Audio) -> Mute/Solo: "Solo default to in place solo.." is set, #1181
+			int soloMode = (*ConfigVar<int>("soloip") & 1) + 1;
+
 			for (int i = 0; i < count; ++i)
 			{
 				MediaTrack* track = GetTrack(s_proj, i);
@@ -184,7 +191,7 @@ static bool MousePlaybackInit (COMMAND_T* ct, bool init)
 					trackState.second = solo << 8 | mute;
 					s_trackSoloMuteState->push_back(trackState);
 
-					SetMediaTrackInfo_Value(track, "I_SOLO", ((track == trackToSolo) ? 1 : 0));
+					SetMediaTrackInfo_Value(track, "I_SOLO", ((track == trackToSolo) ? soloMode : 0));
 					SetMediaTrackInfo_Value(track, "B_MUTE", 0);
 				}
 			}
@@ -286,8 +293,7 @@ static bool MousePlaybackInit (COMMAND_T* ct, bool init)
 
 		if (g_mousePlaybackRestoreView)
 		{
-			int viewAdvance;
-			GetConfig("viewadvance", viewAdvance);
+			const int viewAdvance = ConfigVar<int>("viewadvance").value_or(0);
 			if ((GetBit(viewAdvance, 3) || g_mousePlaybackForceMoveView) && (int)ct->user > 0) // Move view to edit cursor on stop (analogously applied here when starting playback from mouse cursor)
 			{
 				double arrangeStart, arrangeEnd;
@@ -501,9 +507,7 @@ void SplitItemAtStretchMarkers (COMMAND_T* ct)
 				GetTakeStretchMarker(take, i, &position, NULL);
 				position = (position / playRate) + iStart;
 
-				if (position > iEnd)
-					break;
-				else
+				if (position > iStart && position < iEnd)
 					stretchMarkers.push_back(position);
 			}
 
@@ -550,7 +554,8 @@ void MarkersAtNotes (COMMAND_T* ct)
 	PreventUIRefresh(1);
 
 	bool update = false;
-	for (int i = 0; i < CountSelectedMediaItems(NULL); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item      = GetSelectedMediaItem(NULL, i);
 		MediaItem_Take* take = GetActiveTake(item);
@@ -593,7 +598,8 @@ void MarkersAtStretchMarkers (COMMAND_T* ct)
 
 	PreventUIRefresh(1);
 	bool update = false;
-	for (int i = 0; i < CountSelectedMediaItems(NULL); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem_Take* take = GetActiveTake(GetSelectedMediaItem(NULL, i));
 		double iStart     = GetMediaItemInfo_Value(GetSelectedMediaItem(NULL, i), "D_POSITION");
@@ -634,13 +640,14 @@ void MarkerAtMouse (COMMAND_T* ct)
 
 void MarkersRegionsAtItems (COMMAND_T* ct)
 {
-	if (!CountSelectedMediaItems(NULL) || ((int)ct->user == 0 && IsLocked(MARKERS)) || ((int)ct->user == 1 && IsLocked(REGIONS)))
+	const int cnt=CountSelectedMediaItems(NULL);
+	if (!cnt || ((int)ct->user == 0 && IsLocked(MARKERS)) || ((int)ct->user == 1 && IsLocked(REGIONS)))
 		return;
 
 	Undo_BeginBlock2(NULL);
 	PreventUIRefresh(1);
 
-	for (int i = 0; i < CountSelectedMediaItems(NULL); ++i)
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item =  GetSelectedMediaItem(NULL, i);
 		double iStart = *(double*)GetSetMediaItemInfo(item, "D_POSITION", NULL);
@@ -679,7 +686,7 @@ void MoveClosestMarker (COMMAND_T* ct)
 			int markerId;
 			EnumProjectMarkers3(NULL, id, NULL, NULL, NULL, NULL, &markerId, NULL);
 
-			SetProjectMarkerByIndex(NULL, id, NULL, position, NULL, markerId, NULL, NULL);
+			SetProjectMarkerByIndex(NULL, id, false, position, 0, markerId, NULL, 0);
 			Undo_OnStateChangeEx2(NULL, SWS_CMD_SHORTNAME(ct), UNDO_STATE_MISCCFG, -1);
 		}
 	}
@@ -693,7 +700,8 @@ void MidiItemTempo (COMMAND_T* ct)
 	PreventUIRefresh(1);
 	bool ignoreTempo = ((int)ct->user == 2 || (int)ct->user == 3);
 	bool update = false;
-	for (int i = 0; i < CountSelectedMediaItems(NULL); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		if (!IsItemLocked(item))
@@ -729,7 +737,8 @@ void MidiItemTrim (COMMAND_T* ct)
 		return;
 
 	bool update = false;
-	for (int i = 0; i < CountSelectedMediaItems(0); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item = GetSelectedMediaItem(0, i);
 		if (DoesItemHaveMidiEvents(item) && !IsItemLocked(item))
@@ -757,7 +766,7 @@ void MidiItemTrim (COMMAND_T* ct)
 				}
 			}
 
-			update = TrimItem(item, start, end);
+			update = TrimItem(item, start, end, true);
 		}
 	}
 
@@ -781,7 +790,8 @@ void MoveActiveWndToMouse (COMMAND_T* ct)
 	if (HWND hwnd = GetForegroundWindow())
 	{
 		#ifndef _WIN32
-			if (hwnd == GetArrangeWnd() || hwnd == GetRulerWndAlt() || hwnd == GetTcpWnd())
+			bool __tcp_ctmp;
+			if (hwnd == GetArrangeWnd() || hwnd == GetRulerWndAlt() || hwnd == GetTcpWnd(__tcp_ctmp))
 				hwnd = g_hwndParent;
 
 			if (hwnd != g_hwndParent)
@@ -821,7 +831,8 @@ void ToggleItemOnline (COMMAND_T* ct)
 	if (IsLocked(ITEM_FULL))
 		return;
 
-	for (int i = 0; i < CountSelectedMediaItems(NULL); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		if (!IsItemLocked(item))
@@ -839,7 +850,8 @@ void ToggleItemOnline (COMMAND_T* ct)
 void ItemSourcePathToClipBoard (COMMAND_T* ct)
 {
 	WDL_FastString sourceList;
-	for (int i = 0; i < CountSelectedMediaItems(NULL); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		if (PCM_source* source = GetMediaItemTake_Source(GetActiveTake(item)))
@@ -848,9 +860,20 @@ void ItemSourcePathToClipBoard (COMMAND_T* ct)
 			if (!strcmp(source->GetType(), "SECTION"))
 				source = source->GetSource();
 
-			if (const char* fileName = source->GetFileName())
-				if (strcmp(fileName, "")) // skip in-project files
-					sourceList.AppendFormatted(SNM_MAX_PATH, "%s\n", fileName);
+			WDL_String fileName(source->GetFileName());
+			if (fileName.GetLength())
+			{
+#ifdef _WIN32
+				// Reaper returns relative paths with / slash characters on all OSes, replace with \ backslash for external app compatibility.
+				char* pReplace = fileName.Get();
+				while ((pReplace = strchr(pReplace, '/')))
+					*pReplace = '\\';
+#endif
+				// Only add newlines as filename separators 
+				if (i) 
+					sourceList.Append("\n");
+				sourceList.AppendFormatted(SNM_MAX_PATH, "%s", fileName.Get());
+			}
 		}
 	}
 
@@ -931,7 +954,8 @@ void SelectItemsByType (COMMAND_T* ct)
 	bool update = false;
 
 	PreventUIRefresh(1);
-	for (int i = 0; i < CountMediaItems(NULL); ++i)
+	const int itemCount = CountMediaItems(NULL);
+	for (int i = 0; i < itemCount; ++i)
 	{
 		MediaItem* item = GetMediaItem(NULL, i);
 		if (!IsItemLocked(item))
@@ -1070,34 +1094,33 @@ void RestoreTrackSoloMuteStateSlot (COMMAND_T* ct)
 ******************************************************************************/
 void SnapFollowsGridVis (COMMAND_T* ct)
 {
-	int option;
-	GetConfig("projshowgrid", option);
-	SetConfig("projshowgrid", ToggleBit(option, 15));
+	if(ConfigVar<int> projshowgrid = "projshowgrid")
+		*projshowgrid = ToggleBit(*projshowgrid, 15);
 	RefreshToolbar(0);
 }
 
 void PlaybackFollowsTempoChange (COMMAND_T* ct)
 {
 	const char* configStr = "seekmodes";
-	int option; GetConfig(configStr, option);
+	ConfigVar<int> option(configStr);
+	if(!option) return;
 
-	option = ToggleBit(option, 5);
-	SetConfig(configStr, option);
+	*option = ToggleBit(*option, 5);
 	RefreshToolbar(0);
 
 	char tmp[256];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+	snprintf(tmp, sizeof(tmp), "%d", *option);
 	WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 }
 
 void TrimNewVolPanEnvs (COMMAND_T* ct)
 {
 	const char* configStr = "envtrimadjmode";
-	SetConfig(configStr, (int)ct->user);
+	ConfigVar<int>(configStr).try_set((int)ct->user);
 	RefreshToolbar(0);
 
 	char tmp[256];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", (int)ct->user);
+	snprintf(tmp, sizeof(tmp), "%d", (int)ct->user);
 	WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 }
 
@@ -1105,12 +1128,12 @@ void ToggleDisplayItemLabels (COMMAND_T* ct)
 {
 	const char* configStr = "labelitems2";
 
-	int option; GetConfig(configStr, option);
-	option = ToggleBit(option, (int)ct->user);
-	SetConfig(configStr, option);
+	ConfigVar<int> option(configStr);
+	if(!option) return;
+	*option = ToggleBit(*option, (int)ct->user);
 
 	char tmp[256];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+	snprintf(tmp, sizeof(tmp), "%d", *option);
 	WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 
 	UpdateArrange();
@@ -1119,13 +1142,13 @@ void ToggleDisplayItemLabels (COMMAND_T* ct)
 void SetMidiResetOnPlayStop (COMMAND_T* ct)
 {
 	const char* configStr = "midisendflags";
-	int option; GetConfig(configStr, option);
 
-	option = ToggleBit(option, (int)ct->user);
-	SetConfig(configStr, option);
+	ConfigVar<int> option(configStr);
+	if(!option) return;
+	*option = ToggleBit(*option, (int)ct->user);
 
 	char tmp[256];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+	snprintf(tmp, sizeof(tmp), "%d", *option);
 	WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 }
 
@@ -1134,43 +1157,41 @@ void SetOptionsFX (COMMAND_T* ct)
 	if ((int)ct->user == 1)
 	{
 		const char* configStr = "runallonstop";
-		int option; GetConfig(configStr, option);
+		ConfigVar<int> option(configStr);
 
 		// Set only if "Run FX when stopped" is turned on (otherwise the option is disabled so we don't allow the user to change it)
-		if (GetBit(option, 0))
+		if (option && GetBit(*option, 0))
 		{
-			option = ToggleBit(option, 3);
-			SetConfig(configStr, option);
+			*option = ToggleBit(*option, 3);
 
 			char tmp[256];
-			_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+			snprintf(tmp, sizeof(tmp), "%d", *option);
 			WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 		}
 	}
 	else if ((int)ct->user == 2)
 	{
 		const char* configStr = "loopstopfx";
-		int option; GetConfig(configStr, option);
+		ConfigVar<int> option(configStr);
+		if(!option) return;
 
-		option = ToggleBit(option, 0);
-		SetConfig(configStr, option);
+		*option = ToggleBit(*option, 0);
 
 		char tmp[256];
-		_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+		snprintf(tmp, sizeof(tmp), "%d", *option);
 		WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 	}
 	else
 	{
-		const char* configStr = "runallonstop";
-		int runallonstop; GetConfig(configStr, runallonstop);
+		const ConfigVar<int> runallonstop("runallonstop");
 
 		// Set only if "Run FX when stopped" is turned of (otherwise the option is disabled so we don't allow the user to change it)
-		if (!GetBit(runallonstop, 0))
+		if (runallonstop && !GetBit(*runallonstop, 0))
 		{
 			const char* configStr = "runafterstop";
-			SetConfig(configStr, abs((int)ct->user));
+			*ConfigVar<int>(configStr) = abs((int)ct->user);
 			char tmp[256];
-			_snprintfSafe(tmp, sizeof(tmp), "%d", abs((int)ct->user));
+			snprintf(tmp, sizeof(tmp), "%d", abs((int)ct->user));
 			WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 		}
 	}
@@ -1179,26 +1200,26 @@ void SetOptionsFX (COMMAND_T* ct)
 void SetMoveCursorOnPaste (COMMAND_T* ct)
 {
 	const char* configStr = "itemclickmovecurs";
-	int option; GetConfig(configStr, option);
 
-	option = ToggleBit(option, abs((int)ct->user));
-	SetConfig(configStr, option);
+	ConfigVar<int> option(configStr);
+	if(!option) return;
+	*option = ToggleBit(*option, abs((int)ct->user));
 
 	char tmp[256];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+	snprintf(tmp, sizeof(tmp), "%d", *option);
 	WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 }
 
 void SetPlaybackStopOptions (COMMAND_T* ct)
 {
-	const char* configStr = (((int)ct->user == 0) ? "stopprojlen" : "viewadvance");
-	int option; GetConfig(configStr, option);
+	const char* configStr = (int)ct->user == 0 ? "stopprojlen" : "viewadvance";
 
-	option = ToggleBit(option, ((int)ct->user));
-	SetConfig(configStr, option);
+	ConfigVar<int> option(configStr);
+	if(!option) return;
+	*option = ToggleBit(*option, (int)ct->user);
 
 	char tmp[256];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+	snprintf(tmp, sizeof(tmp), "%d", *option);
 	WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 }
 
@@ -1207,10 +1228,10 @@ void SetGridMarkerZOrder (COMMAND_T* ct)
 	const char* configStr = (((int)ct->user > 0) ? "gridinbg" : "gridinbg2");
 
 	int option = abs((int)ct->user) - 1;
-	SetConfig(configStr, option);
+	ConfigVar<int>(configStr).try_set(option);
 
 	char tmp[256];
-	_snprintfSafe(tmp, sizeof(tmp), "%d", option);
+	snprintf(tmp, sizeof(tmp), "%d", option);
 	WritePrivateProfileString("reaper", configStr, tmp, get_ini_file());
 	UpdateArrange();
 }
@@ -1225,13 +1246,13 @@ void SetAutoStretchMarkers(COMMAND_T* ct)
 
 void CycleRecordModes (COMMAND_T* ct)
 {
-	const char* configStr = "projrecmode";
-	int mode; GetConfig(configStr, mode);
-	if (++mode > 2) mode = 0;
+	ConfigVar<int> mode("projrecmode");
+	if(!mode) return;
+	if (++*mode > 2) mode = 0;
 
-	if      (mode == 0) Main_OnCommandEx(40253, 0, NULL);
-	else if (mode == 1) Main_OnCommandEx(40252, 0, NULL);
-	else if (mode == 2) Main_OnCommandEx(40076, 0, NULL);
+	if      (*mode == 0) Main_OnCommandEx(40253, 0, NULL);
+	else if (*mode == 1) Main_OnCommandEx(40252, 0, NULL);
+	else if (*mode == 2) Main_OnCommandEx(40076, 0, NULL);
 }
 
 /******************************************************************************
@@ -1290,9 +1311,9 @@ WDL_DLGRET AdjustPlayrateOptionsProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 			rangeValues = (pair<double,pair<double,double> >*)lParam;
 
 			char tmp[128];
-			_snprintfSafe(tmp, sizeof(tmp), "%.6g", rangeValues->second.first);  SetDlgItemText(hwnd, IDC_EDIT1, tmp);
-			_snprintfSafe(tmp, sizeof(tmp), "%.6g", rangeValues->second.second); SetDlgItemText(hwnd, IDC_EDIT2, tmp);
-			_snprintfSafe(tmp, sizeof(tmp), "%.6g", rangeValues->first);         SetDlgItemText(hwnd, IDC_EDIT3, tmp);
+			snprintf(tmp, sizeof(tmp), "%.6g", rangeValues->second.first);  SetDlgItemText(hwnd, IDC_EDIT1, tmp);
+			snprintf(tmp, sizeof(tmp), "%.6g", rangeValues->second.second); SetDlgItemText(hwnd, IDC_EDIT2, tmp);
+			snprintf(tmp, sizeof(tmp), "%.6g", rangeValues->first);         SetDlgItemText(hwnd, IDC_EDIT3, tmp);
 
 			RestoreWindowPos(hwnd, ADJUST_PLAYRATE_WND, false);
 			ShowWindow(hwnd, SW_SHOW);
@@ -1306,12 +1327,12 @@ WDL_DLGRET AdjustPlayrateOptionsProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARA
 			{
 				case IDOK:
 				{
-					char tmp [256];
-					GetDlgItemText(hwnd, IDC_EDIT1, tmp, 128); rangeValues->second.first  = SetToBounds(AltAtof(tmp), 0.25, 4.0);
-					GetDlgItemText(hwnd, IDC_EDIT2, tmp, 128); rangeValues->second.second = SetToBounds(AltAtof(tmp), 0.25, 4.0);
-					GetDlgItemText(hwnd, IDC_EDIT3, tmp, 128); rangeValues->first         = SetToBounds(AltAtof(tmp), 0.00001, 4.0);
+					char tmp[954]{};
+					GetDlgItemText(hwnd, IDC_EDIT1, tmp, sizeof(tmp)); rangeValues->second.first  = SetToBounds(AltAtof(tmp), 0.25, 4.0);
+					GetDlgItemText(hwnd, IDC_EDIT2, tmp, sizeof(tmp)); rangeValues->second.second = SetToBounds(AltAtof(tmp), 0.25, 4.0);
+					GetDlgItemText(hwnd, IDC_EDIT3, tmp, sizeof(tmp)); rangeValues->first         = SetToBounds(AltAtof(tmp), 0.00001, 4.0);
 
-					_snprintfSafe(tmp, sizeof(tmp), "%lf %lf %lf", rangeValues->first, rangeValues->second.first, rangeValues->second.second);
+					snprintf(tmp, sizeof(tmp), "%lf %lf %lf", rangeValues->first, rangeValues->second.first, rangeValues->second.second);
 					WritePrivateProfileString("SWS", ADJUST_PLAYRATE_KEY, tmp, get_ini_file());
 
 					DestroyWindow(hwnd);
@@ -1400,7 +1421,7 @@ static void SaveExtensionConfigTrackSel (ProjectStateContext *ctx, bool isUndo, 
 	if (ctx && g_trackSelActions.Get()->GetLength())
 	{
 		char line[SNM_MAX_CHUNK_LINE_LENGTH] = "";
-		if (_snprintfStrict(line, sizeof(line), "BR_PROJ_TRACK_SEL_ACTION %s", g_trackSelActions.Get()->Get()) > 0)
+		if (snprintfStrict(line, sizeof(line), "BR_PROJ_TRACK_SEL_ACTION %s", g_trackSelActions.Get()->Get()) > 0)
 			ctx->AddLine("%s", line);
 	}
 }
@@ -1453,7 +1474,7 @@ void SetProjectTrackSelAction (COMMAND_T* ct)
 		// localization note: some messages are shared with the CA editor
 
 		char actionString[SNM_MAX_ACTION_CUSTID_LEN];
-		_snprintfSafe(actionString, sizeof(actionString), "%s", __LOCALIZE("Paste command ID or identifier string here","sws_startup_action"));
+		snprintf(actionString, sizeof(actionString), "%s", __LOCALIZE("Paste command ID or identifier string here","sws_startup_action"));
 
 		if (PromptUserForString(GetMainHwnd(), __LOCALIZE("Set project track selection action","sws_startup_action"), actionString, sizeof(actionString), true))
 		{
@@ -1541,31 +1562,31 @@ void ClearProjectTrackSelAction (COMMAND_T* ct)
 ******************************************************************************/
 int IsSnapFollowsGridVisOn (COMMAND_T* ct)
 {
-	int option; GetConfig("projshowgrid", option);
+	const int option = ConfigVar<int>("projshowgrid").value_or(0);
 	return !GetBit(option, 15);
 }
 
 int IsPlaybackFollowsTempoChangeOn (COMMAND_T* ct)
 {
-	int option; GetConfig("seekmodes", option);
+	const int option = ConfigVar<int>("seekmodes").value_or(0);
 	return GetBit(option, 5);
 }
 
 int IsTrimNewVolPanEnvsOn (COMMAND_T* ct)
 {
-	int option; GetConfig("envtrimadjmode", option);
+	const int option = ConfigVar<int>("envtrimadjmode").value_or(0);
 	return (option == (int)ct->user);
 }
 
 int IsToggleDisplayItemLabelsOn (COMMAND_T* ct)
 {
-	int option; GetConfig("labelitems2", option);
+	const int option = ConfigVar<int>("labelitems2").value_or(0);
 	return ((int)ct->user == 4) ? !GetBit(option, (int)ct->user) : GetBit(option, (int)ct->user);
 }
 
 int IsSetMidiResetOnPlayStopOn (COMMAND_T* ct)
 {
-	int option; GetConfig("midisendflags", option);
+	const int option = ConfigVar<int>("midisendflags").value_or(0);
 	return !GetBit(option, (int)ct->user);
 }
 
@@ -1573,37 +1594,37 @@ int IsSetOptionsFXOn (COMMAND_T* ct)
 {
 	if ((int)ct->user == 1)
 	{
-		int option; GetConfig("runallonstop", option);
+		const int option = ConfigVar<int>("runallonstop").value_or(0);
 		return GetBit(option, 0) ? GetBit(option, 3) : 0; // report as false if "Run FX when stopped" is turned off (because the option is then disabled in the preferences)
 	}
 	else if ((int)ct->user == 2)
 	{
-		int option; GetConfig("loopstopfx", option);
+		const int option = ConfigVar<int>("loopstopfx").value_or(0);
 		return GetBit(option, 0);
 	}
 	else
 	{
-		int runallonstop; GetConfig("runallonstop", runallonstop);
-		int option; GetConfig("runafterstop", option);
+		const int runallonstop = ConfigVar<int>("runallonstop").value_or(0);
+		const int option = ConfigVar<int>("runafterstop").value_or(0);
 		return GetBit(runallonstop, 0) ? 0 : option == abs((int)ct->user) ; // report as false if "Run FX when stopped" is turned on (because the option is then disabled in the preferences)
 	}
 }
 
 int IsSetMoveCursorOnPasteOn (COMMAND_T* ct)
 {
-	int option; GetConfig("itemclickmovecurs", option);
+	const int option = ConfigVar<int>("itemclickmovecurs").value_or(0);
 	return ((int)ct->user < 0) ? !GetBit(option, abs((int)ct->user)) : GetBit(option, abs((int)ct->user));
 }
 
 int IsSetPlaybackStopOptionsOn (COMMAND_T* ct)
 {
-	int option; GetConfig((((int)ct->user == 0) ? "stopprojlen" : "viewadvance"), option);
+	const int option = ConfigVar<int>((int)ct->user == 0 ? "stopprojlen" : "viewadvance").value_or(0);
 	return !!GetBit(option, (int)ct->user);
 }
 
 int IsSetGridMarkerZOrderOn (COMMAND_T* ct)
 {
-	int option; GetConfig((((int)ct->user > 0) ? "gridinbg" : "gridinbg2"), option);
+	const int option = ConfigVar<int>((int)ct->user > 0 ? "gridinbg" : "gridinbg2").value_or(0);
 
 	return option == abs((int)ct->user) - 1;
 }

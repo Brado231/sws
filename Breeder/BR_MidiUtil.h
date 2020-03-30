@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -61,7 +61,8 @@ enum BR_MidiVelLanes
 	CC_BANK_SELECT      = 131,
 	CC_TEXT_EVENTS      = 132,
 	CC_SYSEX            = 133,
-	CC_14BIT_START      = 134
+	CC_14BIT_START      = 134,
+	CC_NOTATION_EVENTS  = 166
 };
 
 /******************************************************************************

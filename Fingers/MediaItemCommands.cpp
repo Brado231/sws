@@ -10,6 +10,9 @@
 #include "RprTrack.h"
 #include "RprMidiTake.h"
 
+// #865, for SNM_GetIntConfigVar()
+#include "../SnM/SnM_Misc.h"
+
 void CmdCleanItemLengths(int flag, void *data);
 void CmdLegatoItemLengths(int flag, void *data);
 void CmdMoveItemsToEditCursor(int flag, void *data);
@@ -281,8 +284,8 @@ void CmdPitchUpMidi::doCommand(int flag)
         return;
 
     for(int i = 0; i < ctr->size(); i++) {
-    if (!ctr->getAt(i).getActiveTake().isMIDI())
-        continue;
+        if (!ctr->getAt(i).getActiveTake().isMIDI())
+            continue;
         RprMidiTake midiItem(ctr->getAt(i).getActiveTake());
         for(int j = 0; j < midiItem.countNotes(); j++) {
             RprMidiNote *note = midiItem.getNoteAt(j);
@@ -300,6 +303,8 @@ void CmdSetItemNameMidi::doCommand(int flag)
         return;
     }
 
+	int octOffset = SNM_GetIntConfigVar("midioctoffs", -666); // #865
+	
     for (int i = 0; i < ctr->size(); i++)
     {
         if (!ctr->getAt(i).getActiveTake().isMIDI())
@@ -311,20 +316,25 @@ void CmdSetItemNameMidi::doCommand(int flag)
         if (midiItem.countNotes() > 0)
         {
             int pitch = midiItem.getNoteAt(0)->getPitch();
+
+						// in reaper.ini: midioctoffs = 0 => offset set in REAPER prefs = -1
+						if (octOffset != -666 && octOffset != 1) {
+							pitch = pitch + (12 * (octOffset - 1));
+						}
+			
             static const char* noteNames[] = {"C", "C#", "D", "D#",
                 "E", "F", "F#", "G", "G#", "A", "A#", "B"};
             int nameIndex = pitch % 12;
 
-            char octave[8];
-            _snprintf(octave, 8, "%d", pitch / 12 - 1);
+            char octave[12];
+            snprintf(octave, sizeof(octave), "%d", pitch / 12 - 1);
 
-            char noteName[8];
+            char noteName[2 + sizeof(octave)];
             strcpy(noteName, noteNames[nameIndex]);
             strcat(noteName, octave);
 
             ctr->getAt(i).getActiveTake().setName(noteName);
-    }
-
+				}
     }
 }
 
@@ -353,8 +363,8 @@ void CmdVelChangeMidi::doCommand(int flag)
         return;
 
     for(int i = 0; i < ctr->size(); i++) {
-    if (!ctr->getAt(i).getActiveTake().isMIDI())
-        continue;
+        if (!ctr->getAt(i).getActiveTake().isMIDI())
+            continue;
         RprMidiTake midiItem(ctr->getAt(i).getActiveTake());
         for(int j = 0; j < midiItem.countNotes(); j++) {
             RprMidiNote *note = midiItem.getNoteAt(j);

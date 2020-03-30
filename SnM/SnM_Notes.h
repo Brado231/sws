@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Notes.h
 /
-/ Copyright (c) 2010-2013 Jeffos
+/ Copyright (c) 2010 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -35,25 +35,28 @@
 
 #define NOTES_UPDATE_FREQ		150
 
-// note types
+// note types (g_notesType)
 enum {
-  SNM_NOTES_PROJECT=0,
+  SNM_NOTES_TRACK=0,
   SNM_NOTES_ITEM,
-  SNM_NOTES_TRACK,
-  SNM_NOTES_MKR_NAME,
+  SNM_NOTES_PROJECT,
+  SNM_NOTES_PROJECT_EXTRA,
+  SNM_NOTES_GLOBAL,
+  SNM_NOTES_MKR_NAME,      // these should remain consecutive ---->
   SNM_NOTES_RGN_NAME,
   SNM_NOTES_MKRRGN_NAME,
   SNM_NOTES_MKR_SUB,
   SNM_NOTES_RGN_SUB,
-  SNM_NOTES_MKRRGN_SUB,
-  SNM_NOTES_ACTION_HELP // must remain the last item: no OSX support yet 
+  SNM_NOTES_MKRRGN_SUB,    // <-----
+#ifdef WANT_ACTION_HELP
+  SNM_NOTES_ACTION_HELP    // must remain the last item: no OSX support yet 
+#endif
 };
 
 class SNM_TrackNotes {
 public:
 	SNM_TrackNotes(const GUID* _guid, const char* _notes) {
 		if (_guid) memcpy(&m_guid, _guid, sizeof(GUID));
-		else genGuid(&m_guid); // just in case
 		m_notes.Set(_notes ? _notes : "");
 	}
 	MediaTrack* GetTrack() { return GuidToTrack(&m_guid); }
@@ -114,17 +117,23 @@ public:
 	void ToggleLock();
 
 	void SaveCurrentText(int _type, bool _wantUndo = true);
-	void SaveCurrentPrjNotes(bool _wantUndo = true);
+	void SaveCurrentProjectNotes(bool _wantUndo = true);
+	void SaveCurrentExtraProjectNotes(bool _wantUndo = true);
 	void SaveCurrentItemNotes(bool _wantUndo = true);
 	void SaveCurrentTrackNotes(bool _wantUndo = true);
+	void SaveCurrentGlobalNotes(bool _wantUndo = true);
 	void SaveCurrentMkrRgnNameOrSub(int _type, bool _wantUndo = true);
+#ifdef WANT_ACTION_HELP
 	void SaveCurrentHelp(); // no undo for action help (saved in a .ini)
-
+#endif
 	void Update(bool _force = false);
+#ifdef WANT_ACTION_HELP
 	int UpdateActionHelp();
+#endif
 	int UpdateItemNotes();
 	int UpdateTrackNotes();
 	int UpdateMkrRgnNameOrSub(int _type);
+	void ForceUpdateMkrRgnNameOrSub(int _type); // NF: trigger update after setting sub from ReaScript
 
 protected:
 	void OnInitDlg();
@@ -139,22 +148,26 @@ protected:
 
 	SNM_VirtualComboBox m_cbType;
 	WDL_VirtualIconButton m_btnLock;
-	SNM_ToolbarButton m_btnAlr, m_btnActionList, m_btnImportSub, m_btnExportSub;
+#ifdef WANT_ACTION_HELP
+	SNM_ToolbarButton m_btnAlr, m_btnActionList;
+#endif
+	SNM_ToolbarButton m_btnImportSub, m_btnExportSub;
 	WDL_VirtualStaticText m_txtLabel;
 	SNM_DynSizedText m_bigNotes;
 
 	NotesMarkerRegionListener m_mkrRgnListener;
 };
 
-
+#ifdef WANT_ACTION_HELP
 void LoadHelp(const char* _cmdName, char* _buf, int _bufSize);
 void SaveHelp(const char* _cmdName, const char* _help);
 void SetActionHelpFilename(COMMAND_T*);
+#endif
 bool GetStringFromNotesChunk(WDL_FastString* _notes, char* _buf, int _bufMaxSize);
 bool GetNotesChunkFromString(const char* _buf, WDL_FastString* _notes, const char* _startLine = NULL);
 
 
-extern SWSProjConfig<WDL_PtrList_DeleteOnDestroy<SNM_TrackNotes> > g_SNM_TrackNotes;
+extern SWSProjConfig<WDL_PtrList_DOD<SNM_TrackNotes> > g_SNM_TrackNotes;
 
 
 void NotesSetTrackTitle();
@@ -168,5 +181,14 @@ void OpenNotes(COMMAND_T*);
 int IsNotesDisplayed(COMMAND_T*);
 void ToggleNotesLock(COMMAND_T*);
 int IsNotesLocked(COMMAND_T*);
+void WriteGlobalNotesToFile();
+
+// ReaScript export
+const char* NFDoGetSWSTrackNotes(MediaTrack* track);
+void NFDoSetSWSTrackNotes(MediaTrack* track, const char* buf);
+
+const char* NFDoGetSWSMarkerRegionSub(int mkrRgnIdx);
+bool NFDoSetSWSMarkerRegionSub(const char* mkrRgnSubIn, int mkrRgnIdx);
+void NF_DoUpdateSWSMarkerRegionSubWindow();
 
 #endif

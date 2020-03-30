@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -47,13 +47,13 @@ const char* const SAVED_CC_LANES           = "<BR_SAVED_HIDDEN_CC_LANES";
 /******************************************************************************
 * Globals                                                                     *
 ******************************************************************************/
-SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_EnvSel> >             g_envSel;
-SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_CursorPos> >          g_cursorPos;
-SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_MidiNoteSel> >        g_midiNoteSel;
-SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_MidiCCEvents> >       g_midiCCEvents;
-SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_ItemMuteState> >      g_itemMuteState;
-SWSProjConfig<WDL_PtrList_DeleteOnDestroy<BR_TrackSoloMuteState> > g_trackSoloMuteState;
-SWSProjConfig<BR_MidiToggleCCLane>                                 g_midiToggleHideCCLanes;
+SWSProjConfig<WDL_PtrList_DOD<BR_EnvSel> >             g_envSel;
+SWSProjConfig<WDL_PtrList_DOD<BR_CursorPos> >          g_cursorPos;
+SWSProjConfig<WDL_PtrList_DOD<BR_MidiNoteSel> >        g_midiNoteSel;
+SWSProjConfig<WDL_PtrList_DOD<BR_MidiCCEvents> >       g_midiCCEvents;
+SWSProjConfig<WDL_PtrList_DOD<BR_ItemMuteState> >      g_itemMuteState;
+SWSProjConfig<WDL_PtrList_DOD<BR_TrackSoloMuteState> > g_trackSoloMuteState;
+SWSProjConfig<BR_MidiToggleCCLane>                     g_midiToggleHideCCLanes;
 
 /******************************************************************************
 * Project state init/exit                                                     *
@@ -622,7 +622,7 @@ bool BR_MidiCCEvents::Restore (BR_MidiEditor& midiEditor, int lane, bool allVisi
 			if (!loopedItem)
 			{
 				// Extend item if needed
-				int midiVu; GetConfig("midivu", midiVu);
+				const int midiVu = ConfigVar<int>("midivu").value_or(0);
 				if (GetBit(midiVu, 14))
 				{
 					double itemStart = GetMediaItemInfo_Value(item, "D_POSITION");
@@ -807,7 +807,7 @@ void BR_ItemMuteState::Save (bool selectedOnly)
 {
 	m_items.clear();
 
-	int count = (selectedOnly) ? CountSelectedMediaItems(NULL) : CountMediaItems(NULL);
+	const int count = (selectedOnly) ? CountSelectedMediaItems(NULL) : CountMediaItems(NULL);
 	for (int i = 0; i < count; ++i)
 	{
 		MediaItem* item = (selectedOnly) ? GetSelectedMediaItem(NULL, i) : GetMediaItem(NULL, i);
@@ -883,7 +883,7 @@ void BR_TrackSoloMuteState::SaveState (ProjectStateContext* ctx)
 		{
 			char guid[64];
 			guidToString(&m_tracks[i].guid, guid);
-			ctx->AddLine("%s %d %d", guid, m_tracks[i].guid, m_tracks[i].solo, m_tracks[i].mute);
+			ctx->AddLine("%s %d %d", guid, m_tracks[i].solo, m_tracks[i].mute);
 		}
 		ctx->AddLine(">");
 	}
@@ -893,7 +893,7 @@ void BR_TrackSoloMuteState::Save (bool selectedOnly)
 {
 	m_tracks.clear();
 
-	int count = (selectedOnly) ? CountSelectedTracks(NULL) : CountTracks(NULL);
+	const int count = (selectedOnly) ? CountSelectedTracks(NULL) : CountTracks(NULL);
 	for (int i = 0; i < count; ++i)
 	{
 		MediaTrack* track = (selectedOnly) ? GetSelectedTrack(NULL, i) : GetTrack(NULL, i);
@@ -954,6 +954,7 @@ void BR_MidiToggleCCLane::LoadState (ProjectStateContext* ctx)
 {
 	char line[256];
 	LineParser lp(false);
+	m_ccLanes.clear();
 	while(!ctx->GetLine(line, sizeof(line)) && !lp.parse(line))
 	{
 		if (!strcmp(lp.gettoken_str(0), ">"))

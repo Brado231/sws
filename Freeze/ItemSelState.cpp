@@ -34,7 +34,7 @@
 //*****************************************************
 //Globals
 
-SWSProjConfig<WDL_PtrList_DeleteOnDestroy<SelItemsTrack> > g_selItemsTrack;
+SWSProjConfig<WDL_PtrList_DOD<SelItemsTrack> > g_selItemsTrack;
 SWSProjConfig<SelItems> g_selItems;
 
 //*****************************************************
@@ -140,7 +140,7 @@ char* SelItems::ItemString(char* str, int maxLen, bool* bDone)
 	{
 		*bDone = true;
 		iLine = 0;
-		sprintf(str, ">");
+		lstrcpyn(str, ">", maxLen);
 	}
 	else
 	{
@@ -150,7 +150,7 @@ char* SelItems::ItemString(char* str, int maxLen, bool* bDone)
 		char pGUIDs[GUIDS_PER_LINE*sizeof(GUID)];
 		for (int i = 0; i < iGUIDs; i++)
 			memcpy(pGUIDs+i*sizeof(GUID), m_selItems.Get(iLine*GUIDS_PER_LINE+i), sizeof(GUID));
-		sprintf(str, b64.Encode(pGUIDs, sizeof(GUID)*iGUIDs));
+		lstrcpyn(str, b64.Encode(pGUIDs, sizeof(GUID)*iGUIDs), maxLen);
 		iLine++;
 	}
 	return str;
@@ -234,7 +234,7 @@ char* SelItemsTrack::ItemString(char* str, int maxLen, bool* bDone)
 	{
 	case 0: // Track GUID
 		guidToString(&m_guid, guidStr);
-		sprintf(str, "<SELTRACKITEMSELSTATE %s", guidStr);
+		snprintf(str, maxLen, "<SELTRACKITEMSELSTATE %s", guidStr);
 		iState = 1;
 		break;
 	case 1: // Slot text
@@ -245,11 +245,11 @@ char* SelItemsTrack::ItemString(char* str, int maxLen, bool* bDone)
 			*bDone = true;
 			iSlot  = 0;
 			iState = 0;
-			sprintf(str, ">");
+			snprintf(str, maxLen, ">");
 		}
 		else
 		{
-			sprintf(str, "<SLOT %d", iSlot+1);
+			snprintf(str, maxLen, "<SLOT %d", iSlot+1);
 			iState = 2;
 		}
 		break;
@@ -311,7 +311,7 @@ void RestoreSelTrackSelItems(int iSlot)
 	PreventUIRefresh(-1);
 
 	char cUndoText[256];
-	sprintf(cUndoText, __LOCALIZE_VERFMT("Restore selected track(s) selected item(s), slot %d","sws_undo"), iSlot+1);
+	snprintf(cUndoText, sizeof(cUndoText), __LOCALIZE_VERFMT("Restore selected track(s) selected item(s), slot %d","sws_undo"), iSlot+1);
 	Undo_OnStateChangeEx(cUndoText, UNDO_STATE_ITEMS, -1);
 	UpdateArrange();
 }

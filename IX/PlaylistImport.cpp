@@ -9,10 +9,10 @@
 / use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
 / of the Software, and to permit persons to whom the Software is furnished to
 / do so, subject to the following conditions:
-/ 
+/
 / The above copyright notice and this permission notice shall be included in all
 / copies or substantial portions of the Software.
-/ 
+/
 / THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 / EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
 / OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -31,12 +31,10 @@
 
 struct SPlaylistEntry
 {
-	SPlaylistEntry() : length(0) { }
-	~SPlaylistEntry() { }
-
 	double length;
 	string title;
 	string path;
+	bool exists;
 };
 
 // Fill outbuf with filenames retrieved from playlist
@@ -44,7 +42,7 @@ void ParseM3U(string listpath, vector<SPlaylistEntry> &filelist)
 {
 	char buf[1024] = {0};
 	ifstream file(listpath.c_str(), ios_base::in);
-	
+
 	if(file.is_open())
 	{
 		// m3u playlist file should start with the string "#EXTM3U"
@@ -56,7 +54,7 @@ void ParseM3U(string listpath, vector<SPlaylistEntry> &filelist)
 		}
 
 		string pathroot = listpath.substr(0, listpath.find_last_of("\\") + 1);
-		
+
 		// Each entry in the playlist consists of two lines.
 		// The first contains the length in seconds and the title, the second should be the file path relative to the playlist location.
 		//	#EXTINF:331,Bernard Pretty Purdie - Hap'nin'
@@ -64,7 +62,7 @@ void ParseM3U(string listpath, vector<SPlaylistEntry> &filelist)
 		// Streaming media should have length -1
 		while(!file.eof())
 		{
-			SPlaylistEntry e;
+			SPlaylistEntry e{};
 
 			file.getline(buf, sizeof(buf));
 			string str = buf;
@@ -101,7 +99,7 @@ void ParsePLS(string listpath, vector<SPlaylistEntry> &filelist)
 {
 	char buf[1024] = {0};
 	ifstream file(listpath.c_str(), ios_base::in);
-	
+
 	if(file.is_open())
 	{
 		// pls playlist file should start with the string "[playlist]"
@@ -129,7 +127,7 @@ void ParsePLS(string listpath, vector<SPlaylistEntry> &filelist)
 		}
 
 		if(count == 0) return;
-		
+
 		// Each entry in the playlist consists of three lines:
 		//	File1=E:\Music\James Brown\20 all time greatest hits!\13 - Get On The Good Foot.mp3
 		//	Title1=James Brown - Get On The Good Foot
@@ -188,18 +186,8 @@ void ParsePLS(string listpath, vector<SPlaylistEntry> &filelist)
 	}
 
 	// Remove streaming media
-	vector<SPlaylistEntry>::iterator it = filelist.begin();
-	while(it != filelist.end())
-	{
-		if(it->length < 0)
-		{
-			it = filelist.erase(it);
-		}
-		else
-		{
-			++it;
-		}
-	}
+	filelist.erase(remove_if(filelist.begin(), filelist.end(),
+		[](const SPlaylistEntry &e) { return e.length < 0; }), filelist.end());
 
 	file.close();
 }
@@ -208,21 +196,26 @@ void ParsePLS(string listpath, vector<SPlaylistEntry> &filelist)
 void PlaylistImport(COMMAND_T* ct)
 {
 	char cPath[256];
-	vector<SPlaylistEntry> filelist;
+	GetProjectPath(cPath, sizeof(cPath));
 
-	GetProjectPath(cPath, 256);
-	string listpath = BrowseForFiles(__LOCALIZE("Import playlist","sws_mbox"), cPath, NULL, false, "Playlist files (*.m3u,*.pls)\0*.m3u;*.pls\0All Files (*.*)\0*.*\0");
-	string ext = ParseFileExtension(listpath);
+	string listpath;
+	if(char *path = BrowseForFiles(__LOCALIZE("Import playlist","sws_mbox"), cPath, NULL, false, "Playlist files (*.m3u,*.pls)\0*.m3u;*.pls\0All Files (*.*)\0*.*\0"))
+	{
+		listpath = path;
+		free(path);
+	}
+	else
+		return;
+
+	const string &ext = ParseFileExtension(listpath);
+
+	vector<SPlaylistEntry> filelist;
 
 	// Decide what kind of playlist we have
 	if(ext == "m3u")
-	{
 		ParseM3U(listpath, filelist);
-	}
 	else if(ext == "pls")
-	{
 		ParsePLS(listpath, filelist);
-	}
 
 	if(filelist.empty())
 	{
@@ -231,44 +224,44 @@ void PlaylistImport(COMMAND_T* ct)
 	}
 
 	// Validate files
-	vector<string> badfiles;
-	for(int i = 0, c = (int)filelist.size(); i < c; i++)
+	size_t badfiles = 0;
+	for(SPlaylistEntry &e : filelist)
 	{
-		SPlaylistEntry e = filelist[i];
-		if(!file_exists(e.path.c_str()))
-		{
-			badfiles.push_back(e.path);
-		}
+		e.exists = file_exists(e.path.c_str());
+
+		if(!e.exists)
+			++badfiles;
 	}
 
 	// If files can't be found, ask user what to do.
-	bool includeMissing = false;
-	if(!badfiles.empty())
+	if(badfiles > 0)
 	{
+		const size_t limit = min<size_t>(badfiles, 9); // avoid enormous messagebox
+
 		stringstream ss;
-		ss << __LOCALIZE("Cannot find some files. Create items anyway?\n","sws_mbox");
+		ss << __LOCALIZE("The following files cannot be found. Create items for them anyway?\n","sws_mbox");
 
-		unsigned int limit = min((int)badfiles.size(), 9); // avoid enormous messagebox
-		for(unsigned int i = 0; i < limit; i++)
-		{
-			ss << "\n " << badfiles[i];
+		size_t n = 0;
+		for(const SPlaylistEntry &e : filelist) {
+			if(!e.exists)
+			{
+				ss << "\n " << e.path;
+
+				if(++n >= limit)
+					break;
+			}
 		}
-		if(badfiles.size() > limit)
-		{
-			ss << "\n +" << badfiles.size() - limit << __LOCALIZE(" more files","sws_mbox");
-		}
 
-		switch(ShowMessageBox(ss.str().c_str(), __LOCALIZE("Import playlist","sws_mbox"), 3))
-		{
-		case 6 : // Yes
-			includeMissing = true;
-			break;
+		if(badfiles > limit)
+			ss << "\n +" << badfiles - limit << __LOCALIZE(" more files","sws_mbox");
 
-		case 7 : // No
-			break;
-
-		default :
+		switch(ShowMessageBox(ss.str().c_str(), __LOCALIZE("Import playlist", "sws_mbox"), MB_YESNOCANCEL)) {
+		case IDCANCEL:
 			return;
+		case IDNO:
+			filelist.erase(remove_if(filelist.begin(), filelist.end(),
+				[](const SPlaylistEntry &e) { return !e.exists; }), filelist.end());
+			break;
 		}
 	}
 
@@ -287,28 +280,25 @@ void PlaylistImport(COMMAND_T* ct)
 
 	// Add new items to track
 	double pos = 0.0;
-	for(int i = 0, c = (int)filelist.size(); i < c; i++)
+	for(const SPlaylistEntry &e : filelist)
 	{
-		SPlaylistEntry e = filelist[i];
-
-		//TODO: Would be better if missing files were offline rather than just empty items.
 		PCM_source *pSrc = PCM_Source_CreateFromFile(e.path.c_str());
-		if(pSrc || includeMissing)
-		{
-			MediaItem *pItem = AddMediaItemToTrack(pTrack);
-			if(pItem)
-			{
-				MediaItem_Take *pTake = AddTakeToMediaItem(pItem);
-				if(pTake)
-				{
-					GetSetMediaItemTakeInfo(pTake, "P_SOURCE", pSrc);
-					GetSetMediaItemTakeInfo(pTake, "P_NAME", (void*) e.title.c_str());
-					SetMediaItemPosition(pItem, pos, false);
-					SetMediaItemLength(pItem, e.length, false);
-					pos += e.length;
-				}
-			}
-		}
+		if(!pSrc)
+			continue;
+
+		MediaItem *pItem = AddMediaItemToTrack(pTrack);
+		if(!pItem)
+			continue;
+
+		MediaItem_Take *pTake = AddTakeToMediaItem(pItem);
+		if(!pTake)
+			continue;
+
+		GetSetMediaItemTakeInfo(pTake, "P_SOURCE", pSrc);
+		GetSetMediaItemTakeInfo(pTake, "P_NAME", (void*) e.title.c_str());
+		SetMediaItemPosition(pItem, pos, false);
+		SetMediaItemLength(pItem, e.length, false);
+		pos += e.length;
 	}
 
 	Undo_EndBlock2(NULL, SWS_CMD_SHORTNAME(ct), UNDO_STATE_ITEMS|UNDO_STATE_TRACKCFG);
@@ -320,7 +310,7 @@ void PlaylistImport(COMMAND_T* ct)
 }
 
 //!WANT_LOCALIZE_1ST_STRING_BEGIN:sws_actions
-static COMMAND_T g_commandTable[] = 
+static COMMAND_T g_commandTable[] =
 {
 	{ { DEFACCEL, "SWS/IX: Import m3u/pls playlist" },	"IX_PLAYLIST_IMPORT",	PlaylistImport,	NULL, 0},
 

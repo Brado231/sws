@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_FX.cpp
 /
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -58,7 +58,7 @@ int GetTrackFXIdFromCmd(MediaTrack* _tr, int _fxCmdId)
 
 int IsFXBypassedSelTracks(COMMAND_T* _ct)
 {
-	int selTrCount = SNM_CountSelectedTracks(NULL, true);
+	const int selTrCount = SNM_CountSelectedTracks(NULL, true);
 
 	// single track selection: return a real toggle state
 	if (selTrCount == 1)
@@ -190,7 +190,7 @@ int g_SNM_SupportBuggyPlug = 0; // set by the user in S&M.ini
 
 int IsFXOfflineSelTracks(COMMAND_T * _ct)
 {
-	int selTrCount = SNM_CountSelectedTracks(NULL, true);
+	const int selTrCount = SNM_CountSelectedTracks(NULL, true);
 
 	// single track selection: return a real toggle state
 	if (selTrCount == 1)
@@ -230,7 +230,7 @@ bool PatchSelTracksFXOnline(const char * _undoMsg, int _mode, int _fxCmdId, cons
 				updated |= updt;
 
 				// close the GUI for buggy plugins (before chunk update)
-				// http://github.com/Jeff0S/sws/issues/317
+				// http://github.com/reaper-oss/sws/issues/317
 				if (updt && g_SNM_SupportBuggyPlug)
 					TrackFX_SetOpen(tr, fxId, false);
 
@@ -298,7 +298,7 @@ bool PatchSelItemsFXState(const char * _undoMsg, int _mode, int _token, int _fxI
 
 /*JFB not used: doesn't seem to occur with take FX
 				// close the GUI for buggy plugins
-				// http://github.com/Jeff0S/sws/issues/317
+				// http://github.com/reaper-oss/sws/issues/317
 				// API LIMITATION: cannot restore shown FX here (contrary to track FX)
 				if (updt && g_SNM_SupportBuggyPlug && _token == 2)
 				{
@@ -329,13 +329,13 @@ void ToggleAllFXsBypassSelItems(COMMAND_T* _ct) {
 
 void UpdateAllFXsOfflineSelItems(COMMAND_T* _ct) {
 	char pInt[4] = "";
-	if (_snprintfStrict(pInt, sizeof(pInt), "%d", (int)_ct->user) > 0)
+	if (snprintfStrict(pInt, sizeof(pInt), "%d", (int)_ct->user) > 0)
 		PatchSelItemsFXState(SWS_CMD_SHORTNAME(_ct), SNM_SETALL_CHUNK_CHAR_EXCEPT, 2, 0xFFFF, pInt); // trick: unreachable fx number
 }
 
 void UpdateAllFXsBypassSelItems(COMMAND_T* _ct) {
 	char pInt[4] = "";
-	if (_snprintfStrict(pInt, sizeof(pInt), "%d", (int)_ct->user) > 0)
+	if (snprintfStrict(pInt, sizeof(pInt), "%d", (int)_ct->user) > 0)
 		PatchSelItemsFXState(SWS_CMD_SHORTNAME(_ct), SNM_SETALL_CHUNK_CHAR_EXCEPT, 1, 0xFFFF, pInt); // trick: unreachable fx number
 }
 
@@ -344,25 +344,27 @@ void UpdateAllFXsBypassSelItems(COMMAND_T* _ct) {
 // Track FX selection
 ///////////////////////////////////////////////////////////////////////////////
 
-int SelectTrackFX(MediaTrack* _tr, int _fx)
+bool SelectTrackFX(MediaTrack* _tr, int _fx)
 {
-	int updates = 0;
-	if (_tr && _fx >=0 && _fx < TrackFX_GetCount(_tr))
+	if (_tr && _fx >= 0 && _fx < TrackFX_GetCount(_tr))
 	{
-		SNM_ChunkParserPatcher p(_tr);
-		char pLastSel[4]="", pShow[4]=""; // 4 should be enough..
-		if (_snprintfStrict(pLastSel, sizeof(pLastSel), "%d", _fx) > 0)
+		if (TrackFX_GetChainVisible(_tr) != -1) // FX chain is open, can use API
 		{
-			if (p.Parse(SNM_GET_CHUNK_CHAR,2,"FXCHAIN","SHOW",0,1,pShow) > 0)
+			TrackFX_Show(_tr, _fx, 1);
+			return true;
+		}
+		else // FX chain is closed, can't use API because it would open the FX chain, use chunking
+		{
+			char pLastSel[4] = "";
+			if (snprintfStrict(pLastSel, sizeof(pLastSel), "%d", _fx) > 0)
 			{
-				// patch the shown FX if the fx chain dlg is opened
-				if (strcmp(pShow, "0") && _snprintfStrict(pShow, sizeof(pShow), "%d", _fx+1) > 0)
-					updates += (p.ParsePatch(SNM_SET_CHUNK_CHAR,2,"FXCHAIN","SHOW",0,1,pShow) > 0 ? 1:0);
-				updates += (p.ParsePatch(SNM_SET_CHUNK_CHAR,2,"FXCHAIN","LASTSEL",0,1,pLastSel) > 0 ? 1:0);
+				SNM_ChunkParserPatcher p(_tr);
+				if (p.ParsePatch(SNM_SET_CHUNK_CHAR, 2, "FXCHAIN", "LASTSEL", 0, 1, pLastSel) > 0)
+					return true;
 			}
 		}
 	}
-	return updates;
+	return false;
 }
 
 void SelectTrackFX(COMMAND_T* _ct) 
@@ -395,7 +397,7 @@ void SelectTrackFX(COMMAND_T* _ct)
 					break;
 			}
 			if (sel >=0)
-				updated = (SelectTrackFX(tr, sel) > 0);
+				updated |= SelectTrackFX(tr, sel);
 		}
 	}
 	if (updated)
@@ -425,97 +427,62 @@ int GetSelectedTrackFX(MediaTrack* _tr)
 	return -1;
 }
 
-
-///////////////////////////////////////////////////////////////////////////////
-// FX presets helpers
-///////////////////////////////////////////////////////////////////////////////
-
-// API LIMITATION: get can't get preset names without activating them
-// => parse ini files instead => limited to user presets (.rpl) ATM
-// _fxType: as defined in FX chunk ("VST", "AU", etc..)
-// _fxName: as defined in FX chunk ("foo.dll", etc..)
-// it is up to the caller to unalloc _presetNames
-int GetUserPresetNames(const char* _fxType, const char* _fxName, WDL_PtrList<WDL_FastString>* _presetNames)
+int GetSelectedTakeFX(MediaItem_Take* _take)
 {
-	int nbPresets = 0;
-	if (_fxType && _fxName && _presetNames)
+	if (_take)
 	{
-		char iniFn[SNM_MAX_PATH]="", buf[256]="";
+		// avoids useless parsing (1st try)
+		if (TakeFX_GetCount(_take) == 1)
+			return 0;
 
-		// *** build ini filename ***
-		lstrcpyn(buf, _fxName, sizeof(buf));
+		// avoids useless parsing (2nd try)
+		int currentFX = TakeFX_GetChainVisible(_take);
+		if (currentFX >= 0)
+			return currentFX;
 
-		// remove some file extensions
-		if (!_stricmp(_fxType, "VST"))
+		// the 2 attempts above failed => no choice: parse to get the selected FX
+		SNM_ChunkParserPatcher p(_take);
+		p.SetWantsMinimalState(true);
+		char pLastSel[4] = ""; // 4: if there are many, many FXs
+		p.Parse(SNM_GET_CHUNK_CHAR, 2, "TAKEFX", "LASTSEL", 0, 1, &pLastSel);
+		return atoi(pLastSel); // return 0 (first FX) if failed
+	}
+	return -1;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// FX presets helpers/actions
+///////////////////////////////////////////////////////////////////////////////
+
+// it is up to the caller to unalloc _presetNames
+int GetUserPresetNames(MediaTrack* _tr, int _fx, WDL_PtrList<WDL_FastString>* _presetNames)
+{
+	int cnt=0;
+	if (_tr && _fx>=0)
+	{
+		char fn[SNM_MAX_PATH];
+		*fn = '\0';
+		TrackFX_GetUserPresetFilename(_tr, _fx, fn, sizeof(fn));
+		if (*fn && FileOrDirExists(fn))
 		{
-			const char* p = NULL;
-#ifdef _WIN32
-			p = stristr(buf, ".dll");
-			if (!p) p = stristr(buf, ".vst"); // e.g. vst3
-#else
-			p = stristr(buf, ".vst"); // standard vst, vst3, or ".vst.dylib" (e.g. reaeq)
-#endif
-			if (p)
-				buf[(int)(p-buf)] = '\0';
-		}
-
-		// replace special chars
-		// would have been better to use something like Filenamize() here
-		// but the following code mimics REAPER's behavior => can lead to 
-		// invalid/non-crossplatform filenames, e.g. filenames containing "\"
-		int i=0;
-		while (buf[i]) {
-			if (buf[i] == '.' || buf[i] == '/') buf[i] = '_';
-			i++;
-		}
-
-		char* fxType = _strdup(_fxType);
-		for (int i=0; i < (int)strlen(fxType); i++)
-			fxType[i] = tolower(fxType[i]);
-		_snprintfSafe(iniFn, sizeof(iniFn), "%s%cpresets-%s-%s.ini", GetResourcePath(), PATH_SLASH_CHAR, fxType, buf);
-
-		bool exitTst = FileOrDirExists(iniFn);
-		if (!exitTst)
-			_snprintfSafe(iniFn, sizeof(iniFn), "%s%cpresets%c%s-%s.ini", GetResourcePath(), PATH_SLASH_CHAR, PATH_SLASH_CHAR, fxType, buf);
-		free(fxType);
-
-		// *** get presets ***
-		if (exitTst || (!exitTst && FileOrDirExists(iniFn)))
-		{
-			GetPrivateProfileString("General", "NbPresets", "0", buf, 5, iniFn);
-			nbPresets = atoi(buf);
-			char sec[32];
+			char sec[64];
+			char buf[SNM_MAX_PRESET_NAME_LEN];
+			const int nbPresets = GetPrivateProfileInt("General", "NbPresets", 0, fn);
 			for (int i=0; i < nbPresets; i++)
 			{
-				*buf = '\0';
-				if (_snprintfStrict(sec, 32, "Preset%d", i) > 0)
-					GetPrivateProfileString(sec, "Name", "", buf, 256, iniFn);
-				_presetNames->Add(new WDL_FastString(buf));
+				snprintf(sec, sizeof(sec), "Preset%d", i);
+				GetPrivateProfileString(sec, "Name", "", buf, sizeof(buf), fn);
+				if (*buf)
+				{
+					if (_presetNames) _presetNames->Add(new WDL_FastString(buf));
+					cnt++;
+				}
 			}
 		}
 	}
-	return nbPresets;
+	return cnt;
 }
-
-// wrapper to ease cleanup some day, see API LIMITATION above
-// it is up to the caller to unalloc _presetNames
-int GetUserPresetNames(MediaTrack* _tr, int _fx, WDL_PtrList<WDL_FastString>* _presetsOut)
-{
-	if (_tr && _fx>=0 && _presetsOut)
-	{
-		//JFB!! removeme some day (+remove SNM_FXSummary, SNM_FXSummaryParser, etc..) if new APIs
-		SNM_FXSummaryParser p(_tr);
-		WDL_PtrList<SNM_FXSummary>* summaries = p.GetSummaries();
-		SNM_FXSummary* sum = summaries ? summaries->Get(_fx) : NULL;
-		return (sum ? GetUserPresetNames(sum->m_type.Get(), sum->m_realName.Get(), _presetsOut) : 0);
-	}
-	return 0;
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-// Trigger, get & set FX presets
-///////////////////////////////////////////////////////////////////////////////
 
 // _presetId: only taken into account when _dir == 0, see below
 // _fxId: fx index
@@ -525,7 +492,7 @@ bool TriggerFXPreset(MediaTrack* _tr, int _fxId, int _presetId, int _dir)
 {
 #ifdef _SNM_DEBUG
 	char dbg[256]="";
-	_snprintfSafe(dbg, sizeof(dbg), "TriggerFXPreset() - tr: %p, fx: %d, preset: %d, dir: %d\n", _tr, _fxId, _presetId, _dir);
+	snprintf(dbg, sizeof(dbg), "TriggerFXPreset() - tr: %p, fx: %d, preset: %d, dir: %d\n", _tr, _fxId, _presetId, _dir);
 	OutputDebugString(dbg);
 #endif
 	int nbFx = _tr ? TrackFX_GetCount(_tr) : 0;
@@ -626,12 +593,12 @@ double TriggerPresetJob::GetCurrentValue() {
 double TriggerPresetJob::GetMaxValue()
 { 	
 	int presetCnt=0;
-	if (GetSetFXPresetSelTrack(m_fxId, NULL, &presetCnt))
+	if (GetSetFXPresetSelTrack(m_fxId, NULL, &presetCnt)>=0)
 		return presetCnt-1;
 	return 0.0;
 }
 
-void TriggerFXPresetSelTrack(MIDI_COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd) {
+void TriggerFXPresetSelTrack(COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd) {
 	ScheduledJob::Schedule(new TriggerPresetJob(SNM_SCHEDJOB_DEFAULT_DELAY, _val, _valhw, _relmode, (int)_ct->user));
 }
 
@@ -644,7 +611,7 @@ void TriggerFXPresetSelTrack(MIDI_COMMAND_T* _ct, int _val, int _valhw, int _rel
 // _fxId: fx index in chain or -1 for the selected fx
 // _what: 0 to remove, -1 to move fx up in chain, 1 to move fx down in chain
 // note: brutal code (we'd need a dedicated parser/patcher here..)
-// initially comes from http://github.com/Jeff0S/sws/issues/258
+// initially comes from http://github.com/reaper-oss/sws/issues/258
 bool SNM_MoveOrRemoveTrackFX(MediaTrack* _tr, int _fxId, int _what)
 {
 	bool updated = false;
@@ -659,6 +626,7 @@ bool SNM_MoveOrRemoveTrackFX(MediaTrack* _tr, int _fxId, int _what)
 				 (_what == 1  && fxId < (nbFx-1)) || 
 				 (_what == -1 && fxId > 0)))
 			{
+				g_disable_chunk_guid_filtering++;
 				SNM_ChunkParserPatcher p(_tr);
 				WDL_FastString chainChunk;
 				if (p.GetSubChunk("FXCHAIN", 2, 0, &chainChunk, "<ITEM") > 0)
@@ -704,6 +672,7 @@ bool SNM_MoveOrRemoveTrackFX(MediaTrack* _tr, int _fxId, int _what)
 						}
 					}
 				}
+				g_disable_chunk_guid_filtering--;
 			}
 		}
 	}

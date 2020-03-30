@@ -1,9 +1,9 @@
 /******************************************************************************
 / wol_Util.cpp
 /
-/ Copyright (c) 2014-2015 wol
+/ Copyright (c) 2014 and later wol
 / http://forum.cockos.com/member.php?u=70153
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -46,7 +46,8 @@ bool SaveSelectedTracks()
 	g_savedSelectedTracks = new (nothrow)vector < MediaTrack* > ;
 	if (g_savedSelectedTracks)
 	{
-		for (int i = 0; i < CountSelectedTracks(NULL); ++i)
+		const int count = CountSelectedTracks(NULL);
+		for (int i = 0; i < count; ++i)
 			if (MediaTrack* tr = GetSelectedTrack(NULL, i))
 				g_savedSelectedTracks->push_back(tr);
 		return true;
@@ -71,10 +72,7 @@ void SetTrackHeight(MediaTrack* track, int height, bool useChunk)
 	{
 		GetSetMediaTrackInfo(track, "I_HEIGHTOVERRIDE", &height);
 
-		PreventUIRefresh(1);
-		Main_OnCommand(41327, 0);
-		Main_OnCommand(41328, 0);
-		PreventUIRefresh(-1);
+		TrackList_AdjustWindows(false);
 	}
 	else
 	{
@@ -83,7 +81,7 @@ void SetTrackHeight(MediaTrack* track, int height, bool useChunk)
 
 		if (p.Parse(SNM_GET_CHUNK_CHAR, 1, "TRACK", "TRACKHEIGHT", 0, 1, pTrackLine))
 		{
-			_snprintfSafe(pTrackLine, BUFFER_SIZE, "%d", height);
+			snprintf(pTrackLine, BUFFER_SIZE, "%d", height);
 			p.ParsePatch(SNM_SET_CHUNK_CHAR, 1, "TRACK", "TRACKHEIGHT", 0, 1, pTrackLine);
 		}
 	}
@@ -173,7 +171,7 @@ void SetArrangeScroll(int offsetY, int height, VerticalZoomCenter center)
 
 	si.nPos = newPos;
 	CoolSB_SetScrollInfo(hwnd, SB_VERT, &si, true);
-	SendMessage(hwnd, WM_VSCROLL, si.nPos << 16 | SB_THUMBPOSITION, NULL);
+	SendMessage(hwnd, WM_VSCROLL, si.nPos << 16 | SB_THUMBPOSITION, 0);
 }
 
 void SetArrangeScrollTo(MediaTrack* track, VerticalZoomCenter center)
@@ -266,7 +264,7 @@ int GetEnvelopeOverlapState(TrackEnvelope* envelope, int* laneCount, int* envCou
 		return -1;
 
 	int visEnvCount = CountVisibleTrackEnvelopesInTrackLane(GetEnvParent(envelope));
-	int overlapMinHeight = *(int*)GetConfigVar("env_ol_minh");
+	int overlapMinHeight = *ConfigVar<int>("env_ol_minh");
 	if (overlapMinHeight < 0)
 		return (WritePtr(laneCount, visEnvCount), WritePtr(envCount, visEnvCount), 0);
 

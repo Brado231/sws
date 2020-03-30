@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,10 @@
 #pragma once
 
 #include "BR.h"
+
+// NF Eraser Tool
+#include "../nofish/nofish.h"
+
 
 /******************************************************************************
 * Continuous actions                                                          *
@@ -83,9 +87,13 @@ inline void ContinuousActionsInitExit (bool init)
 	if (init)
 	{
 		BR_RegisterContinuousActions();
+
+		// NF Eraser tool
+		NF_RegisterContinuousActions();
 	}
 	else
 	{
-		ContinuousActionStopAll();
+		// if we are exiting, context is already gone, trying to stop anything will likely segfault or access HWND-after-destroy
+		// ContinuousActionStopAll();
 	}
 }

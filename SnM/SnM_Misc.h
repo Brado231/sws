@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Misc.h
 /
-/ Copyright (c) 2012-2013 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -60,5 +60,7 @@ void AutoRefreshToolbarRun();
 // misc actions
 void ChangeMetronomeVolume(COMMAND_T*);
 void SimulateMouseClick(COMMAND_T*);
+void DumpWikiActionList(COMMAND_T*);
+void DumpActionList(COMMAND_T*);
 
 #endif

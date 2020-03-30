@@ -1,7 +1,7 @@
 /******************************************************************************
 / Console.h
 /
-/ Copyright (c) 2009 Tim Payne (SWS), Jeffos
+/ Copyright (c) 2009 and later Tim Payne (SWS), Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -101,6 +101,7 @@ protected:
 	void OnInitDlg();
 	HMENU OnContextMenu(int x, int y, bool* wantDefaultItems);
 	int OnKey(MSG* msg, int iKeyState);
+	void OnResize();
 private:
 	char m_strCmd[256];
 	char* m_pTrackId;

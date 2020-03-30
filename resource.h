@@ -14,7 +14,7 @@
 #define IDD_TRACKLIST                   108
 #define IDD_ABOUT                       109
 #define IDD_PROMPT                      110
-#define IDD_MEDIAPOOL                   111
+// unused                               111
 #define IDD_SSMERGE                     112
 #define IDD_INFO                        113
 #define IDD_RECVMISSING                 114
@@ -26,17 +26,14 @@
 #define IDD_EXOCOM_PARDLG               120
 #define IDD_ITEMVOLUME                  121
 #define IDD_DISKSPACECALC               122
-#define IDD_CSPVOC_CONF                 123
 #define IDD_RENDITEMS                   124
 #define IDD_SCALEITEMPOS                125
 #define IDD_RANDTEMPOS                  126
-#define IDD_GEN_ENV1                    127
 #define IDD_TAKEMIXER                   128
 #define IDD_REPOSITEMS                  129
 #define IDD_TAKEFINDER                  130
 #define IDD_ITEM_INSPECTOR              131
 #define IDD_ITEMPOSREMAP                132
-#define IDD_RUBBERBAND                  133
 #define IDD_MEDIADLG                    134
 #define IDD_MULMATCH                    135
 #define IDD_AUTORENAMETAKES             136
@@ -93,6 +90,8 @@
 #define IDC_GRID_WARP                   185
 #define IDC_ENV_PT_ADJ_VERT             186
 #define IDC_MISC_SPEAKER                187
+#define IDD_NF_LOUDNESS_ANALYZE_PROGRESS 188 // #880
+#define IDC_ERASER                      189 // NF Eraser tool
 #define IDB_UP                          500
 #define IDB_DOWN                        501
 #define IDC_BUTTON1                     1000
@@ -122,7 +121,6 @@
 #define IDC_LASTUNDOPROJ                1019
 #define IDC_EDIT3                       1020
 #define IDC_SETTIMESEL                  1020
-#define IDC_EDIT4                       1021
 #define IDC_SEEKPLAY                    1021
 #define IDC_IVOL_NUDGE                  1022
 #define IDC_DRAGUPPER                   1022
@@ -152,9 +150,6 @@
 #define IDC_STATIC1                     1045
 #define IDC_IISTATIC1                   1046
 #define IDC_IPRCURVE                    1047
-#define IDC_RBPEDIT2                    1048
-#define IDC_RBPEDIT3                    1049
-#define IDC_RBPEDIT1                    1050
 #define IDC_EDITPIXAM                   1051
 #define IDC_EDITCURSECS                 1052
 #define IDC_PROJFOLMEDLIST              1053
@@ -192,12 +187,11 @@
 #define IDC_NUDGE_S                     1086
 #define IDC_NUDGE_B                     1087
 #define IDC_PNUDGE_A                    1088
-#define IDC_LICENSE                     1089
 #define IDC_ADD                         1090
 #define IDC_DELETE                      1091
 #define IDC_PREVIEW                     1092
 #define IDC_REMOVE                      1093
-#define IDC_ADDGROUP                    1094
+// unused                               1094
 #define IDC_LIST                        1095
 #define IDC_EDIT                        1096
 #define IDC_COMBO                       1097
@@ -240,7 +234,7 @@
 #define IDC_CURVIS                      1133
 #define IDC_CUSTOM                      1134
 #define IDC_INFO                        1135
-#define IDC_GROUPS                      1136
+// unused                               1136
 #define IDC_FILES                       1137
 #define IDC_NAME                        1138
 #define IDC_SNAME                       1139
@@ -317,17 +311,12 @@
 #define IDC_RENDER_PATH                 1213
 #define IDC_BROWSE                      1214
 #define IDC_DONTSHOW                    1215
-#define IDC_ALLOW_STEMS                 1219
 #define IDC_DEFAULT_RENDER_PATH         1221
-#define IDC_PREPEND_TRACK_NUMBER        1222
-#define IDC_REGION_PREFIX               1223
 #define IDC_STATIC_ARTIST               1224
 #define IDC_STATIC_ALBUM                1225
 #define IDC_STATIC_GENRE                1226
 #define IDC_STATIC_YEAR                 1227
 #define IDC_STATIC_COMMENT              1228
-#define IDC_STATIC_REGION_PREFIX        1229
-#define IDC_REMOVE_PREFIX_FROM_TRACK_NAME 1230
 #define IDC_DRAGSCALE                   1230
 #define IDC_LIST1                       1231
 #define IDC_LIST2                       1232
@@ -455,14 +444,16 @@
 #define IDC_ALL_POS_H_COMBO             1356
 #define IDC_ALL_POS_V_COMBO             1357
 #define IDC_ALL_FOREGROUND              1358
+#define IDC_DELTRACKSPROMPT             1359 // snapshots
+#define IDC_PHASE                       1360 // snapshots
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        188
+#define _APS_NEXT_RESOURCE_VALUE        189
 #define _APS_NEXT_COMMAND_VALUE         40000
-#define _APS_NEXT_CONTROL_VALUE         1359
+#define _APS_NEXT_CONTROL_VALUE         1361
 #define _APS_NEXT_SYMED_VALUE           100
 #endif
 #endif

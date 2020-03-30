@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Project.cpp
 /
-/ Copyright (c) 2011-2014 Jeffos
+/ Copyright (c) 2011 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -64,7 +64,7 @@ void TieFileToProject(const char* _fn, ReaProject* _prj, bool _tie)
 			plugin_register(_tie ? "file_in_project_ex" : "-file_in_project_ex", p);
 #ifdef _SNM_DEBUG
 			char dbg[256]="";
-			_snprintfSafe(dbg, sizeof(dbg), "TieFileToProject() - ReaProject: %p, %s %s\n", prj, _tie ? "Added" : "Removed", _fn);
+			snprintf(dbg, sizeof(dbg), "TieFileToProject() - ReaProject: %p, %s %s\n", prj, _tie ? "Added" : "Removed", _fn);
 			OutputDebugString(dbg);
 #endif
 		}
@@ -78,6 +78,9 @@ void UntieFileFromProject(const char* _fn, ReaProject* _prj) {
 // flags&1=incl. items, &2=incl. markers/regions, &4=incl. envelopes
 double SNM_GetProjectLength(int _flags)
 {
+  // all bits set/default flags (see the .h): make use of the new API
+	if (_flags == 0xFFFF) return GetProjectLength(NULL);
+
 	double prjlen = 0.0, pos, end;
 	if (_flags&2)
 	{
@@ -198,13 +201,13 @@ double SelectProjectJob::GetCurrentValue()
 
 double SelectProjectJob::GetMaxValue()
 {
-	int i=0;
+	int i=-1;
 	ReaProject *prj;
-	while ((prj = EnumProjects(i++, NULL, 0)));
-	return i;
+	while ((prj = EnumProjects(++i, NULL, 0)));
+	return i-1;
 }
 
-void SelectProject(MIDI_COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd) {
+void SelectProject(COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd) {
 	ScheduledJob::Schedule(new SelectProjectJob(SNM_SCHEDJOB_DEFAULT_DELAY, _val, _valhw, _relmode));
 }
 
@@ -232,6 +235,7 @@ void ProjectStartupActionTimer()
 	}
 }
 
+double g_runningReaVer;
 // global action timer armed via SNM_Init()/OnInitTimer()
 void GlobalStartupActionTimer()
 {
@@ -244,6 +248,7 @@ void GlobalStartupActionTimer()
 		OutputDebugString("'\n");
 #endif
 	}
+	g_runningReaVer = atof(GetAppVersion());
 }
 
 int PromptClearStartupAction(int _type, bool _clear)
@@ -404,7 +409,7 @@ static void SaveExtensionConfig(ProjectStateContext *ctx, bool isUndo, struct pr
 {
 	char line[SNM_MAX_CHUNK_LINE_LENGTH] = "";
 	if (ctx && g_prjActions.Get()->GetLength())
-		if (_snprintfStrict(line, sizeof(line), "S&M_PROJACTION %s", g_prjActions.Get()->Get()) > 0)
+		if (snprintfStrict(line, sizeof(line), "S&M_PROJACTION %s", g_prjActions.Get()->Get()) > 0)
 			ctx->AddLine("%s", line);
 }
 

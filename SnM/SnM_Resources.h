@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Resources.h
 /
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -144,6 +144,7 @@ protected:
 	HMENU BookmarkContextMenu(HMENU _menu);
 	HMENU AddMediaOptionsContextMenu(HMENU _menu);
 	HMENU OnContextMenu(int x, int y, bool* wantDefaultItems);
+	HWND IDC_FILTER_GetFocus(HWND _hwnd, MSG* _msg);
 	int OnKey(MSG* msg, int iKeyState);
 	int GetValidDroppedFilesCount(HDROP _h);
 	void OnDroppedFiles(HDROP _h);
@@ -173,10 +174,8 @@ protected:
 };
 
 
-extern WDL_PtrList<ResourceList> g_SNM_ResSlots;
+extern WDL_PtrList_DOD<ResourceList> g_SNM_ResSlots;
 extern int g_tiedSlotActions[SNM_NUM_DEFAULT_SLOTS];
-extern int g_prjLoaderStartPref;
-extern int g_prjLoaderEndPref;
 
 
 bool AutoSaveChunkSlot(const void* _obj, const char* _fn);
@@ -279,11 +278,6 @@ void LoadOrSelectProjectSlot(int _slotType, const char* _title, int _slot, bool 
 bool AutoSaveProjectSlot(int _slotType, const char* _dirPath, WDL_PtrList<ResourceItem>* _owSlots, bool _saveCurPrj);
 void LoadOrSelectProjectSlot(COMMAND_T*);
 void LoadOrSelectProjectTabSlot(COMMAND_T*);
-
-#ifdef _SNM_MISC
-bool IsProjectLoaderConfValid();
-void ProjectLoaderConf(COMMAND_T*);
-#endif
 void LoadOrSelectNextPreviousProjectSlot(COMMAND_T*);
 void LoadOrSelectNextPreviousProjectTabSlot(COMMAND_T*);
 

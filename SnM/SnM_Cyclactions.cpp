@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Cyclactions.cpp
 /
-/ Copyright (c) 2011-2013 Jeffos
+/ Copyright (c) 2011 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,10 +36,11 @@
 #include "SnM_Dlg.h"
 #include "SnM_Util.h"
 #include "SnM_Window.h"
+#include "../url.h"
 #include "../Console/Console.h"
 #include "../IX/IX.h"
 #include "../reaper/localize.h"
-#include "../../WDL/projectcontext.h"
+#include "WDL/projectcontext.h"
 
 #define CA_WND_ID	"SnMCyclaction"
 
@@ -494,7 +495,7 @@ int PerformSingleCommand(int _section, const char* _cmdStr, int _val, int _valhw
 			if (!g_undos)
 			{
 				char undo[128];
-				_snprintfSafe(undo, sizeof(undo), __LOCALIZE("ReaConsole command '%s'","sws_undo"), _cmdStr+strlen(STATEMENT_CONSOLE)+1);
+				snprintf(undo, sizeof(undo), __LOCALIZE("ReaConsole command '%s'","sws_undo"), _cmdStr+strlen(STATEMENT_CONSOLE)+1);
 				Undo_OnStateChangeEx2(NULL, undo, UNDO_STATE_ALL, -1);
 			}
 			return 1;
@@ -507,7 +508,7 @@ int PerformSingleCommand(int _section, const char* _cmdStr, int _val, int _valhw
 			if (!g_undos)
 			{
 				char undo[128];
-				_snprintfSafe(undo, sizeof(undo), __LOCALIZE("Label Processor command '%s'","sws_undo"), _cmdStr+strlen(STATEMENT_LABEL)+1);
+				snprintf(undo, sizeof(undo), __LOCALIZE("Label Processor command '%s'","sws_undo"), _cmdStr+strlen(STATEMENT_LABEL)+1);
 				Undo_OnStateChangeEx2(NULL, undo, UNDO_STATE_ALL, -1); // do not use UNDO_STATE_ITEMS here
 			}
 			return 1;
@@ -1012,7 +1013,7 @@ bool CheckRegisterableCyclaction(int _section, Cyclaction* _a,
 int RegisterCyclation(const char* _name, int _section, int _cycleId, int _cmdId)
 {
 	char custId[SNM_MAX_ACTION_CUSTID_LEN]="";
-	if (_snprintfStrict(custId, sizeof(custId), "%s%d", GetCACustomId(_section), _cycleId) > 0)
+	if (snprintfStrict(custId, sizeof(custId), "%s%d", GetCACustomId(_section), _cycleId) > 0)
 	{
 		return SWSCreateRegisterDynamicCmd(
 			SNM_GetActionSectionUniqueId(_section),
@@ -1094,7 +1095,7 @@ void LoadCyclactions(bool _wantMsg, WDL_PtrList<Cyclaction>* _cyclactions = NULL
 			int ver = GetPrivateProfileInt(GetCAIniSection(sec), "Version", 1, _iniFn ? _iniFn : g_SNM_CyclIniFn.Get());
 			for (int j=0; j<nb; j++)
 			{
-				if (_snprintfStrict(buf, sizeof(buf), "Action%d", j+1) > 0)
+				if (snprintfStrict(buf, sizeof(buf), "Action%d", j+1) > 0)
 				{
 					GetPrivateProfileString(GetCAIniSection(sec), buf, CA_EMPTY, actionBuf, sizeof(actionBuf), _iniFn ? _iniFn : g_SNM_CyclIniFn.Get());
 					
@@ -1300,7 +1301,7 @@ void Cyclaction::UpdateNameAndCmds()
 	m_cmds.EmptySafe(false); // to be deleted by callers (might be used in a list view)
 
 	char actionStr[CA_MAX_LEN] = "";
-	lstrcpyn(actionStr, m_def.Get(), sizeof(actionStr));
+	lstrcpyn_safe(actionStr, m_def.Get(), sizeof(actionStr));
 	char* tok = strtok(actionStr, s_CA_SEP_STR);
 	if (tok)
 	{
@@ -1357,27 +1358,43 @@ int Cyclaction::GetIndent(WDL_FastString* _cmd)
 // GUI
 ///////////////////////////////////////////////////////////////////////////////
 
-// commands
-#define ADD_CYCLACTION_MSG				0xF001
-#define DEL_CYCLACTION_MSG				0xF002
-#define RUN_CYCLACTION_MSG				0xF003
-#define CUT_CMD_MSG						0xF004
-#define COPY_CMD_MSG					0xF005
-#define PASTE_CMD_MSG					0xF006
-#define LEARN_CMD_MSG					0xF010
-#define DEL_CMD_MSG						0xF011
-#define EXPLODE_CMD_MSG					0xF012
-#define ADD_CMD_MSG						0xF013
-#define ADD_STEP_CMD_MSG				0xF014
-#define ADD_STATEMENT_MSG				0xF015 // --> leave some room here
-#define IMPORT_CUR_SECTION_MSG			0xF030 // <--
-#define IMPORT_ALL_SECTIONS_MSG			0xF031
-#define EXPORT_SEL_MSG					0xF032
-#define EXPORT_CUR_SECTION_MSG			0xF033
-#define EXPORT_ALL_SECTIONS_MSG			0xF034
-#define RESET_CUR_SECTION_MSG			0xF040
-#define RESET_ALL_SECTIONS_MSG			0xF041
-#define LEARN_CYCLACTION_MSG			0xF042
+enum {
+  ADD_CYCLACTION_MSG = 0xF001,
+  DEL_CYCLACTION_MSG,
+  RUN_CYCLACTION_MSG,
+  CUT_CMD_MSG,
+  COPY_CMD_MSG,
+  PASTE_CMD_MSG,
+  LEARN_CMD_MSG,
+  DEL_CMD_MSG,
+  EXPLODE_CMD_MSG,
+  ADD_CMD_MSG,
+  ADD_STEP_CMD_MSG,
+  ADD_STATEMENT_MSG,                                        // --> statement cmds
+  IMPORT_CUR_SECTION_MSG = ADD_STATEMENT_MSG+NB_STATEMENTS, // <--
+  IMPORT_ALL_SECTIONS_MSG,
+  EXPORT_SEL_MSG,
+  EXPORT_CUR_SECTION_MSG,
+  EXPORT_ALL_SECTIONS_MSG,
+  RESET_CUR_SECTION_MSG,
+  RESET_ALL_SECTIONS_MSG,
+  LEARN_CYCLACTION_MSG,
+  LAST_MSG // keep as last item!
+};
+
+enum {
+  CMBID_SECTION = LAST_MSG,
+  TXTID_SECTION,
+  BTNID_UNDO,
+  BTNID_APPLY,
+  BTNID_CANCEL,
+  BTNID_IMPEXP,
+  BTNID_ACTIONLIST,
+  WNDID_LR,
+  BTNID_L,
+  BTNID_R
+};
+
 
 // no default filter text on OSX (cannot catch EN_SETFOCUS/EN_KILLFOCUS)
 #ifndef _SNM_SWELL_ISSUES
@@ -1495,7 +1512,7 @@ void Apply()
 	SaveCyclactions(g_editedActions);
 #ifdef _WIN32
 	// force ini file cache refresh
-	// see http://support.microsoft.com/kb/68827 & http://github.com/Jeff0S/sws/issues/397
+	// see http://support.microsoft.com/kb/68827 & http://github.com/reaper-oss/sws/issues/397
 	WritePrivateProfileString(NULL, NULL, NULL, g_SNM_CyclIniFn.Get());
 #endif
 	LoadCyclactions(wasEdited); // + flush, unregister, re-register
@@ -1521,7 +1538,7 @@ void Cancel(bool _checkSave)
 		SaveCyclactions(g_editedActions);
 #ifdef _WIN32
 		// force ini file cache refresh
-		// see http://support.microsoft.com/kb/68827 & http://github.com/Jeff0S/sws/issues/397
+		// see http://support.microsoft.com/kb/68827 & http://github.com/reaper-oss/sws/issues/397
 		WritePrivateProfileString(NULL, NULL, NULL, g_SNM_CyclIniFn.Get());
 #endif
 		LoadCyclactions(true); // + flush, unregister, re-register
@@ -1574,9 +1591,9 @@ void CyclactionsView::GetItemText(SWS_ListItem* item, int iCol, char* str, int i
 					if (cycleId >= 0)
 					{
 						if (a->m_cmdId)
-							_snprintfSafe(str, iStrMax, "%5.d", cycleId+1);
+							snprintf(str, iStrMax, "%5.d", cycleId+1);
 						else
-							_snprintfSafe(str, iStrMax, "(%d)", cycleId+1);
+							snprintf(str, iStrMax, "(%d)", cycleId+1);
 					}
 				}
 				else
@@ -1877,20 +1894,6 @@ void CommandsView::OnItemSelChanged(SWS_ListItem* item, int iState) {
 ///////////////////////////////////////////////////////////////////////////////
 // CyclactionWnd
 ///////////////////////////////////////////////////////////////////////////////
-
-enum
-{
-  CMBID_SECTION=2000, //JFB would be great to have _APS_NEXT_CONTROL_VALUE *always* defined
-  TXTID_SECTION,
-  BTNID_UNDO,
-  BTNID_APPLY,
-  BTNID_CANCEL,
-  BTNID_IMPEXP,
-  BTNID_ACTIONLIST,
-  WNDID_LR,
-  BTNID_L,
-  BTNID_R
-};
 
 // S&M windows lazy init: below's "" prevents registering the SWS' screenset callback
 // (use the S&M one instead - already registered via SNM_WindowManager::Init())
@@ -2440,12 +2443,12 @@ void CyclactionWnd::DrawControls(LICE_IBitmap* _bm, const RECT* _r, int* _toolti
 void CyclactionWnd::AddImportExportMenu(HMENU _menu, bool _wantReset)
 {
 	char buf[128] = "";
-	_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("Import in section '%s'...","sws_DLG_161"), SNM_GetActionSectionName(g_editedSection));
+	snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("Import in section '%s'...","sws_DLG_161"), SNM_GetActionSectionName(g_editedSection));
 	AddToMenu(_menu, buf, IMPORT_CUR_SECTION_MSG, -1, false, IsCAFiltered() ? MF_GRAYED : MF_ENABLED);
 	AddToMenu(_menu, __LOCALIZE("Import all sections...","sws_DLG_161"), IMPORT_ALL_SECTIONS_MSG, -1, false, IsCAFiltered() ? MF_GRAYED : MF_ENABLED);
 	AddToMenu(_menu, SWS_SEPARATOR, 0);
 	AddToMenu(_menu, __LOCALIZE("Export selected cycle actions...","sws_DLG_161"), EXPORT_SEL_MSG);
-	_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("Export section '%s'...","sws_DLG_161"), SNM_GetActionSectionName(g_editedSection));
+	snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("Export section '%s'...","sws_DLG_161"), SNM_GetActionSectionName(g_editedSection));
 	AddToMenu(_menu, buf, EXPORT_CUR_SECTION_MSG);
 	AddToMenu(_menu, __LOCALIZE("Export all sections...","sws_DLG_161"), EXPORT_ALL_SECTIONS_MSG);
 	if (_wantReset) {
@@ -2457,7 +2460,7 @@ void CyclactionWnd::AddImportExportMenu(HMENU _menu, bool _wantReset)
 void CyclactionWnd::AddResetMenu(HMENU _menu)
 {
 	char buf[128] = "";
-	_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("Reset section '%s'...","sws_DLG_161"), SNM_GetActionSectionName(g_editedSection));
+	snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("Reset section '%s'...","sws_DLG_161"), SNM_GetActionSectionName(g_editedSection));
 	AddToMenu(_menu, buf, RESET_CUR_SECTION_MSG);
 	AddToMenu(_menu, __LOCALIZE("Reset all sections","sws_DLG_161"), RESET_ALL_SECTIONS_MSG);
 }
@@ -2733,8 +2736,8 @@ int CyclactionInit()
 	s_EMPTY_R.Set(__LOCALIZE("<- Select a cycle action","sws_DLG_161"));
 	s_DEFAULT_R.Set(__LOCALIZE("Right click here to add commands","sws_DLG_161"));
 
-	_snprintfSafe(g_lastExportFn, sizeof(g_lastExportFn), SNM_CYCLACTION_EXPORT_FILE, GetResourcePath());
-	_snprintfSafe(g_lastImportFn, sizeof(g_lastImportFn), SNM_CYCLACTION_EXPORT_FILE, GetResourcePath());
+	snprintf(g_lastExportFn, sizeof(g_lastExportFn), SNM_CYCLACTION_EXPORT_FILE, GetResourcePath());
+	snprintf(g_lastImportFn, sizeof(g_lastImportFn), SNM_CYCLACTION_EXPORT_FILE, GetResourcePath());
 
 	// consolidate undo pref, default==enabled for ascendant compatibility
 	// local pref: comes from the S&M.ini file

@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2013-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -37,9 +37,9 @@
 #include "../SnM/SnM_Dlg.h"
 #include "../SnM/SnM_Item.h"
 #include "../SnM/SnM_Util.h"
-#include "../../WDL/lice/lice.h"
-#include "../../WDL/lice/lice_bezier.h"
-#include "../../WDL/projectcontext.h"
+#include "WDL/lice/lice.h"
+#include "WDL/lice/lice_bezier.h"
+#include "WDL/projectcontext.h"
 
 /******************************************************************************
 * Constants                                                                   *
@@ -177,14 +177,14 @@ bool IsFraction (char* str, double& convertedFraction)
 	if (!buf)
 	{
 		convertedFraction = atof(str);
-		_snprintfSafe(str, size + 1, "%g", convertedFraction);
+		snprintf(str, size + 1, "%g", convertedFraction);
 		return false;
 	}
 	else
 	{
 		int num = atoi(str);
 		int den = atoi(buf+1);
-		_snprintfSafe(str, size + 1, "%d/%d", num, den);
+		snprintf(str, size + 1, "%d/%d", num, den);
 		if (den != 0)
 			convertedFraction = (double)num/(double)den;
 		else
@@ -212,38 +212,6 @@ void AppendLine (WDL_FastString& str, const char* line)
 	str.Append("\n");
 }
 
-void AdvanceBySecond (int direction, int& hours, int& minutes, int& seconds)
-{
-	if (direction > 0)
-	{
-		++seconds;
-		if (seconds >= 60)
-		{
-			seconds = 0;
-			++minutes;
-			if (minutes >= 60)
-			{
-				minutes = 0;
-				++hours;
-			}
-		}
-
-	}
-	else
-	{
-		--seconds;
-		if (seconds < 0)
-		{
-			seconds = 59;
-			--minutes;
-			if (minutes < 0)
-			{
-				minutes = 59;
-				--hours;
-			}
-		}
-	}
-}
 const char* strstr_last (const char* haystack, const char* needle)
 {
 	if (!haystack || !needle || *needle == '\0')
@@ -303,7 +271,7 @@ vector<double> GetProjectMarkers (bool timeSel, double timeSelDelta /*=0*/)
 WDL_FastString FormatTime (double position, int mode /*=-1*/)
 {
 	WDL_FastString string;
-	int projTimeMode; GetConfig("projtimemode", projTimeMode);
+	const int projTimeMode = ConfigVar<int>("projtimemode").value_or(0);
 
 	if (mode == 1 || (mode == -1 && projTimeMode == 1))
 	{
@@ -454,7 +422,7 @@ double GetPositionFromTimeInfo (int hours, int minutes, int seconds, int frames)
 	WDL_FastString timeString;
 	timeString.AppendFormatted(256, "%d:%d:%d:%d", hours, minutes, seconds, frames);
 
-	return parse_timestr_pos(timeString.Get(), 5);
+	return parse_timestr_len(timeString.Get(), 0, 5);
 }
 
 void GetTimeInfoFromPosition (double position, int* hours, int* minutes, int* seconds, int* frames)
@@ -475,39 +443,6 @@ void GetTimeInfoFromPosition (double position, int* hours, int* minutes, int* se
 	WritePtr(minutes, ((str[1].GetLength() > 0) ? atoi(str[1].Get()) : 0));
 	WritePtr(seconds, ((str[2].GetLength() > 0) ? atoi(str[2].Get()) : 0));
 	WritePtr(frames,  ((str[3].GetLength() > 0) ? atoi(str[3].Get()) : 0));
-}
-
-void AdvanceByFrame (int direction, int& hours, int& minutes, int& seconds, int& frames)
-{
-	bool dropFrame;
-	int maxFrame = (int)TimeMap_curFrameRate(NULL, &dropFrame);
-
-	if (direction > 0)
-	{
-		++frames;
-		if (frames > maxFrame)
-		{
-			AdvanceBySecond(direction, hours, minutes, seconds);
-			frames = (dropFrame) ? ((seconds == 0 && minutes % 10 != 0) ? 2 : 0) : (0);
-		}
-	}
-	else
-	{
-		if (frames == 0 && seconds == 0 && minutes == 0 && hours == 0)
-		{
-			return;
-		}
-		else
-		{
-			int minFrame = (dropFrame) ? ((seconds == 0 && minutes % 10 != 0) ? 2 : 0) : (0);
-			--frames;
-			if (frames < minFrame)
-			{
-				AdvanceBySecond(direction, hours, minutes, seconds);
-				frames = maxFrame;
-			}
-		}
-	}
 }
 
 void GetSetLastAdjustedSend (bool set, MediaTrack** track, int* sendId, BR_EnvType* type)
@@ -647,13 +582,11 @@ PCM_source* DuplicateSource (PCM_source* source)
 {
 	if (source && !strcmp(source->GetType(), "MIDI")) // check "MIDI" only (trim pref doesn't apply to pooled MIDI)
 	{
-		int trimMidiOnSplit;
-		GetConfig("trimmidionsplit", trimMidiOnSplit);
-		if (GetBit(trimMidiOnSplit, 1))
+		const ConfigVar<int> trimMidiOnSplit("trimmidionsplit");
+		if (trimMidiOnSplit && GetBit(*trimMidiOnSplit, 1))
 		{
-			SetConfig("trimmidionsplit", ClearBit(trimMidiOnSplit, 1));
+			ConfigVarOverride<int> temp(trimMidiOnSplit, ClearBit(*trimMidiOnSplit, 1));
 			PCM_source* newSource = source->Duplicate();
-			SetConfig("trimmidionsplit", trimMidiOnSplit);
 			return newSource;
 		}
 	}
@@ -716,7 +649,7 @@ bool TcpVis (MediaTrack* track)
 	{
 		if ((GetMasterTrack(NULL) == track))
 		{
-			int master; GetConfig("showmaintrack", master);
+			const int master = ConfigVar<int>("showmaintrack").value_or(0);
 			if (master == 0 || (int)GetMediaTrackInfo_Value(track, "I_WNDH") == 0)
 				return false;
 			else
@@ -794,8 +727,11 @@ int GetLoopCount (MediaItem_Take* take, double position, int* loopIterationForPo
 				double sourceLenPPQ  = GetMidiSourceLengthPPQ(take, true);
 				double itemLenPPQ = itemEndPPQ; // gotcha: the same cause PPQ starts counting from 0 from item start, making it mover obvious this way
 
-				loopCount = (int)(itemLenPPQ/sourceLenPPQ);
-				loopCount += (abs(fmod(itemLenPPQ, sourceLenPPQ) == 0) ? (-1) : (0)); // fmod works great here because ppq are always rounded to whole numbers
+				loopCount = static_cast<int>(itemLenPPQ / sourceLenPPQ);
+
+				// fmod works great here because ppq are always rounded to whole numbers
+				if(fmod(itemLenPPQ, sourceLenPPQ) == 0)
+					loopCount--;
 
 				if (loopIterationForPosition && CheckBounds(position, itemStart, itemEnd))
 				{
@@ -852,7 +788,7 @@ int GetEffectiveTakeId (MediaItem_Take* take, MediaItem* item, int id, int* effe
 	int effectiveId = -1;
 
 	// Empty takes not displayed
-	int emptyLanes; GetConfig("takelanes", emptyLanes);
+	const int emptyLanes = ConfigVar<int>("takelanes").value_or(0);
 	if (GetBit(emptyLanes, 2))
 	{
 		for (int i = 0; i < count; ++i)
@@ -929,7 +865,7 @@ int GetEffectiveTimebase (MediaItem* item)
 		{
 			timeBase = (int)(char)GetMediaTrackInfo_Value(GetMediaItemTrack(item), "C_BEATATTACHMODE");
 			if (timeBase != 0 && timeBase != 1 && timeBase != 2)
-				GetConfig("itemtimelock", timeBase);
+				timeBase = ConfigVar<int>("itemtimelock").value_or(0);
 		}
 	}
 	return timeBase;
@@ -1078,7 +1014,7 @@ bool DoesItemHaveMidiEvents (MediaItem* item)
 	return false;
 }
 
-bool TrimItem (MediaItem* item, double start, double end, bool force /*=false*/)
+bool TrimItem (MediaItem* item, double start, double end, bool adjustTakesEnvelopes, bool force /*=false*/)
 {
 	if (!item)
 		return false;
@@ -1116,6 +1052,11 @@ bool TrimItem (MediaItem* item, double start, double end, bool force /*=false*/)
 				if (!itemLooped)
 					MIDI_SetItemExtents(item, TimeMap_timeToQN(start), TimeMap_timeToQN(end)); // this will update source length (but in case of looped midi item we don't want that (it also disabled looping for item)
 			}
+
+			if (adjustTakesEnvelopes) {
+				DoAdjustTakesEnvelopes(take, startDif); 
+			}
+			
 		}
 
 		SetActiveTake(activeTake);
@@ -1123,6 +1064,91 @@ bool TrimItem (MediaItem* item, double start, double end, bool force /*=false*/)
 	}
 	return false;
 }
+
+bool TrimItem_UseNativeTrimActions(MediaItem* item, double start, double end, bool force /*=false*/)
+{
+	if (!item)
+		return false;
+
+	if (start > end)
+		swap(start, end);
+	if (start < 0)
+		start = 0;
+
+	double newLen = end - start;
+	if (newLen <= 0)
+		return false;
+
+	double itemPos = GetMediaItemInfo_Value(item, "D_POSITION");
+	double itemLen = GetMediaItemInfo_Value(item, "D_LENGTH");
+
+	if (force || start != itemPos || newLen != itemLen) {
+		// NF: ugly code ahead for fixing
+		// https://github.com/reaper-oss/sws/issues/950#issuecomment-384251678
+		// but it avoids having to deal with stretch markers (see other comments in #950)
+
+		// save item selection
+		WDL_TypedBuf<MediaItem*> selItems;
+		SWS_GetSelectedMediaItems(&selItems);
+		
+		PreventUIRefresh(1);
+
+		// disable item grouping
+		// https://github.com/reaper-oss/sws/pull/979#issuecomment-457760578
+		ConfigVarOverride<int> projgroupover("projgroupover", 1);
+
+		// unselect all items
+		for (int i = 0; i < selItems.GetSize(); i++) {
+			SetMediaItemInfo_Value(selItems.Get()[i], "B_UISEL", 0);
+		}
+
+		SetMediaItemInfo_Value(item, "B_UISEL", 1); // select item currently being worked on
+
+		double origCurPos = GetCursorPosition();
+		SetEditCurPos(start, false, false);
+		Main_OnCommand(41305, 0); // Trim left edge of item to edit cursor
+		SetEditCurPos(end, false, false);
+		Main_OnCommand(41311, 0); // Trim right edge of item to edit cursor 
+		SetEditCurPos(origCurPos, false, false);
+
+		SetMediaItemInfo_Value(item, "B_UISEL", 0); // unselect previously manually selected item
+
+		projgroupover.rollback(); // reenable item grouping (if necessary)
+
+		// restore original item selection
+		for (int i = 0; i < selItems.GetSize(); i++) {
+			SetMediaItemInfo_Value(selItems.Get()[i], "B_UISEL", 1);
+		}
+
+		PreventUIRefresh(-1);
+		return true;
+	}
+	return false;
+}
+
+void DoAdjustTakesEnvelopes(MediaItem_Take* take, double offset)
+{
+	int envCount = CountTakeEnvelopes(take);
+	double takeRate = GetMediaItemTakeInfo_Value(take, "D_PLAYRATE");
+
+	for (int i = 0; i < envCount; i++) {
+		TrackEnvelope* env = GetTakeEnvelope(take, i);
+		int envPointsCount = CountEnvelopePoints(env);
+
+		double time; double value; int shape; double tension; bool selected;
+
+		for (int j = 0; j < envPointsCount; j++) {
+			bool isEnvPoint = GetEnvelopePoint(env, j, &time, &value, &shape, &tension, &selected);
+
+			if (isEnvPoint) {
+				double newTime = time - (offset * takeRate);
+				SetEnvelopePoint(env, j, &newTime, &value, &shape, &tension, &selected, &g_bTrue);
+			}
+		}
+		Envelope_SortPoints(env);
+	}
+}
+
 
 bool GetMediaSourceProperties (MediaItem_Take* take, bool* section, double* start, double* length, double* fade, bool* reverse)
 {
@@ -1326,7 +1352,8 @@ MediaItem* GuidToItem (const GUID* guid, ReaProject* proj /*=NULL*/)
 {
 	if (guid)
 	{
-		for (int i = 0; i < CountMediaItems(proj); ++i)
+		const int itemCount = CountMediaItems(proj);
+		for (int i = 0; i < itemCount; ++i)
 		{
 			MediaItem* item = GetMediaItem(proj, i);
 			if (GuidsEqual((GUID*)GetSetMediaItemInfo(item, "GUID", NULL), guid))
@@ -1604,7 +1631,7 @@ bool InsertStretchMarkersInAllItems (const vector<double>& stretchMarkers, bool 
 
 	if (!IsLocked(ITEM_FULL) && !IsLocked(STRETCH_MARKERS) && (!obeySwsOptions || (obeySwsOptions && IsSetAutoStretchMarkersOn(NULL))))
 	{
-		int itemCount = CountMediaItems(NULL);
+		const int itemCount = CountMediaItems(NULL);
 		for (int i = 0; i < itemCount; ++i)
 		{
 			MediaItem* item = GetMediaItem(NULL, i);
@@ -1660,15 +1687,14 @@ bool InsertStretchMarkerInAllItems (double position, bool doBeatsTimebaseOnly /*
 ******************************************************************************/
 double GetGridDivSafe ()
 {
-	double gridDiv;
-	GetConfig("projgriddiv", gridDiv);
-	if (gridDiv < MAX_GRID_DIV)
+	ConfigVar<double> gridDiv("projgriddiv");
+	if (!gridDiv || *gridDiv < MAX_GRID_DIV)
 	{
-		SetConfig("projgriddiv", MAX_GRID_DIV);
+		gridDiv.try_set(MAX_GRID_DIV);
 		return MAX_GRID_DIV;
 	}
 	else
-		return gridDiv;
+		return *gridDiv;
 }
 
 double GetNextGridDiv (double position)
@@ -1685,12 +1711,12 @@ double GetNextGridDiv (double position)
 
 	double nextGridPosition = position;
 
-	int projgridframe; GetConfig("projgridframe", projgridframe);
-	if (projgridframe > 0)
+	const int projgridframe = ConfigVar<int>("projgridframe").value_or(0);
+	if (projgridframe&1) // frames grid line spacing
 	{
 		int hours, minutes, seconds, frames;
 		GetTimeInfoFromPosition(position, &hours, &minutes, &seconds, &frames);
-		AdvanceByFrame(1, hours, minutes, seconds, frames);
+		++frames;
 
 		nextGridPosition = GetPositionFromTimeInfo(hours, minutes, seconds, frames);
 	}
@@ -1720,9 +1746,15 @@ double GetNextGridDiv (double position)
 		// Get grid division translated into current time signature
 		int gridDivStartMeasure, num, den;
 		TimeMap2_timeToBeats(0, gridDivStart, &gridDivStartMeasure, &num, NULL, &den);
-		double gridDiv = GetGridDivSafe();
-		gridDiv = (den*gridDiv) / 4;
-
+		double gridDiv;
+		if (projgridframe&64) // measure grid line spacing
+			gridDiv = num;
+		else
+		{
+			gridDiv = GetGridDivSafe();
+			gridDiv = (den*gridDiv) / 4;
+		}
+		
 		// How much measures must pass for grid diving to start anew? (again, obvious when grid division spans more measures)
 		int measureStep = (int)(gridDiv/num);
 		if (measureStep == 0) measureStep = 1;
@@ -1758,6 +1790,7 @@ double GetNextGridDiv (double position)
 		else
 		{
 			double positionBeats = TimeMap2_timeToBeats(0, position, NULL, NULL, NULL, NULL) - TimeMap2_timeToBeats(0, gridDivStart, NULL, NULL, NULL, NULL);
+			//double nextGridBeats = ((int)(positionBeats / gridDiv) + 1) * gridDiv;
 			double nextGridBeats = (int)((positionBeats + gridDiv) / gridDiv) * gridDiv;
 			while (abs(nextGridBeats - positionBeats) < 1E-6) nextGridBeats += gridDiv; // rounding errors, yuck...
 
@@ -1797,8 +1830,8 @@ double GetPrevGridDiv (double position)
 
 	double prevGridDivPos = position;
 
-	int projgridframe; GetConfig("projgridframe", projgridframe);
-	if (projgridframe > 0)
+	const int projgridframe = ConfigVar<int>("projgridframe").value_or(0);
+	if (projgridframe&1) // frames grid line spacing
 	{
 		int hours, minutes, seconds, frames;
 		GetTimeInfoFromPosition(position, &hours, &minutes, &seconds, &frames);
@@ -1807,7 +1840,7 @@ double GetPrevGridDiv (double position)
 		double currentFramePos = GetPositionFromTimeInfo(hours, minutes, seconds, frames);
 		if (IsEqual(currentFramePos, position, SNM_FUDGE_FACTOR))
 		{
-			AdvanceByFrame(-1, hours, minutes, seconds, frames);
+			--frames;
 			prevGridDivPos = GetPositionFromTimeInfo(hours, minutes, seconds, frames);
 		}
 		else
@@ -1837,8 +1870,8 @@ double GetClosestGridDiv (double position)
 	if (position > 0)
 	{
 		double prevGridDiv = GetPrevGridDiv(position);
-		if (position == GetNextGridDiv(prevGridDiv)) gridDiv = position;
-		else                                         gridDiv = GetClosestVal(position, prevGridDiv, GetNextGridDiv(position));
+		double nextGridDiv = GetNextGridDiv(prevGridDiv);
+		gridDiv = GetClosestVal(position, prevGridDiv, nextGridDiv);
 	}
 	return gridDiv;
 }
@@ -1851,15 +1884,17 @@ double GetNextGridLine (double position)
 	{
 		PreventUIRefresh(1);
 		double editCursor = GetCursorPositionEx(NULL);
-		int editCursorUndo; GetConfig("undomask", editCursorUndo);
-		SetConfig("undomask", ClearBit(editCursorUndo, 3));  // prevent edit cursor undo
+
+		// prevent edit cursor undo
+		const ConfigVar<int> editCursorUndo("undomask");
+		ConfigVarOverride<int> tmpUndoMask(editCursorUndo,
+			ClearBit(editCursorUndo.value_or(0), 3));
 
 		SetEditCurPos(position, false, false);
 		Main_OnCommand(40647, 0); // View: Move cursor right to grid division
 		nextGridLine = GetCursorPositionEx(NULL);
 
 		SetEditCurPos(editCursor, false, false);
-		SetConfig("undomask", editCursorUndo);
 		PreventUIRefresh(-1);
 	}
 
@@ -1873,15 +1908,16 @@ double GetPrevGridLine (double position)
 	{
 		PreventUIRefresh(1);
 		double editCursor = GetCursorPositionEx(NULL);
-		int editCursorUndo; GetConfig("undomask", editCursorUndo);
-		SetConfig("undomask", ClearBit(editCursorUndo, 3));  // prevent edit cursor undo
+
+		// prevent edit cursor undo
+		const ConfigVar<int> editCursorUndo("undomask");
+		ConfigVarOverride<int> tmpUndoMask(editCursorUndo, ClearBit(*editCursorUndo, 3));
 
 		SetEditCurPos(position, false, false);
 		Main_OnCommand(40646, 0); // View: Move cursor left to grid division
 		prevGridLine = GetCursorPositionEx(NULL);
 
 		SetEditCurPos(editCursor, false, false);
-		SetConfig("undomask", editCursorUndo);
 		PreventUIRefresh(-1);
 	}
 	return prevGridLine;
@@ -1895,12 +1931,11 @@ double GetClosestGridLine (double position)
 	*  situations, so it should probably be rewritten   *
 	*  using the stuff from GetNextGridDiv()            */
 
-	int snap; GetConfig("projshowgrid", snap);
-	SetConfig("projshowgrid", snap & (~0x8100)); // enable snap and snapping following grid visibility
+	// enable snap and snapping following grid visibility
+	const ConfigVar<int> snap("projshowgrid");
+	ConfigVarOverride<int> projshowgrid(snap, snap.value_or(0) & (~0x8100));
 
-	double grid = SnapToGrid(NULL, position);
-	SetConfig("projshowgrid", snap);
-	return grid;
+	return SnapToGrid(NULL, position);
 }
 
 double GetClosestMeasureGridLine (double position)
@@ -1911,9 +1946,9 @@ double GetClosestMeasureGridLine (double position)
 	double gridLine = 0;
 	if ((den*gridDiv) / 4 < num)
 	{
-		SetConfig("projgriddiv", 4*(double)num/(double)den); // temporarily set grid div to full measure of current time signature
+		// temporarily set grid div to full measure of current time signature
+		ConfigVarOverride<double> tmpProjgriddiv("projgriddiv", 4*(double)num/(double)den);
 		gridLine = GetClosestGridLine(position);
-		SetConfig("projgriddiv", gridDiv);
 	}
 	else
 	{
@@ -1929,7 +1964,7 @@ double GetClosestLeftSideGridLine (double position)
 		return grid;
 
 	double gridDiv = GetGridDivSafe();
-	int minGridPx; GetConfig("projgridmin", minGridPx);
+	const int minGridPx = ConfigVar<int>("projgridmin").value_or(0);
 	double hZoom = GetHZoomLevel();
 
 	int num, den; TimeMap_GetTimeSigAtTime(0, position, &num, &den, NULL);
@@ -1973,7 +2008,7 @@ double GetClosestRightSideGridLine (double position)
 		return grid;
 
 	double gridDiv = GetGridDivSafe();
-	int minGridPx; GetConfig("projgridmin", minGridPx);
+	const int minGridPx = ConfigVar<int>("projgridmin").value_or(0);
 	double hZoom = GetHZoomLevel();
 
 	int num, den; TimeMap_GetTimeSigAtTime(0, position, &num, &den, NULL);
@@ -2015,13 +2050,13 @@ double GetClosestRightSideGridLine (double position)
 ******************************************************************************/
 bool IsLockingActive ()
 {
-	int projSelLock; GetConfig("projsellock", projSelLock);
+	const int projSelLock = ConfigVar<int>("projsellock").value_or(0);
 	return !!GetBit(projSelLock, 14);
 }
 
 bool IsLocked (int lockElements)
 {
-	int projSelLock; GetConfig("projsellock", projSelLock);
+	const int projSelLock = ConfigVar<int>("projsellock").value_or(0);
 
 	if (!GetBit(projSelLock, 14))
 		return false;
@@ -2052,7 +2087,7 @@ int GetTrackHeightFromVZoomIndex (MediaTrack* track, int vZoom)
 		{
 			if (vZoom <= 4)
 			{
-				int fullArm; GetConfig("zoomshowarm", fullArm);
+				const int fullArm = ConfigVar<int>("zoomshowarm").value_or(0);
 				int armed =  (int)GetMediaTrackInfo_Value(track, "I_RECARM");
 
 				if ((GetMasterTrack(NULL) == track)) height = theme->tcp_master_min_height;
@@ -2126,9 +2161,14 @@ int GetTrackHeight (MediaTrack* track, int* offsetY, int* topGap /*=NULL*/, int*
 
 	// Get track height
 	int height = (int)GetMediaTrackInfo_Value(track, "I_HEIGHTOVERRIDE");
-	if (height == 0)
+	void *chk = GetSetMediaTrackInfo(track,"I_TCPH",NULL);
+	if (chk) // should always be supported on 5.982+
 	{
-		int vZoom; GetConfig("vzoom2", vZoom);
+		height = *(int *)chk;
+	}
+	else if (height == 0)
+	{
+		const int vZoom = ConfigVar<int>("vzoom2").value_or(0);
 		height = GetTrackHeightFromVZoomIndex(track, vZoom);
 	}
 	else
@@ -2140,7 +2180,8 @@ int GetTrackHeight (MediaTrack* track, int* offsetY, int* topGap /*=NULL*/, int*
 		if (compact == 1)
 		{
 			RECT r;
-			GetClientRect(GetTcpTrackWnd(track), &r);
+			bool is_container;
+			GetClientRect(GetTcpTrackWnd(track,is_container), &r);
 			height = r.bottom - r.top;
 		}
 		// Check I_HEIGHTOVERRIDE against minimum height (i.e. changing theme resizes tracks that are below
@@ -2215,6 +2256,18 @@ int GetTrackEnvHeight (TrackEnvelope* envelope, int* offsetY, bool drawableRange
 		return 0;
 	}
 
+	if (GetEnvelopeInfo_Value)
+	{
+		WritePtr(offsetY, 
+			(int) GetMediaTrackInfo_Value(parent,"I_TCPY") + 
+			(int)GetEnvelopeInfo_Value(envelope,drawableRangeOnly ? "I_TCPY_USED" : "I_TCPY") 
+			);
+
+		return (int)GetEnvelopeInfo_Value(envelope,drawableRangeOnly ? "I_TCPH_USED" : "I_TCPH");
+	}
+
+	// legacy - REAPER v5.981 and earlier
+
 	// Prepare return variables and get track's height and offset
 	int envOffset = 0;
 	int envHeight = 0;
@@ -2222,7 +2275,8 @@ int GetTrackEnvHeight (TrackEnvelope* envelope, int* offsetY, bool drawableRange
 	int trackHeight = GetTrackHeight(track, (offsetY) ? (&trackOffset) : (NULL));
 
 	// Get first envelope's lane hwnd and cycle through the rest
-	HWND hwnd = GetWindow(GetTcpTrackWnd(track), GW_HWNDNEXT);
+	bool is_container;
+	HWND hwnd = GetWindow(GetTcpTrackWnd(track,is_container), GW_HWNDNEXT);
 	MediaTrack* nextTrack = CSurf_TrackFromID(1 + CSurf_TrackToID(track, false), false);
 	while (true)
 	{
@@ -2242,7 +2296,8 @@ int GetTrackEnvHeight (TrackEnvelope* envelope, int* offsetY, bool drawableRange
 		if ((MediaTrack*)hwndData == nextTrack)
 			break;
 
-		if (TrackEnvelope* currentEnvelope = HwndToEnvelope(hwnd))
+		POINT pt={0,0}; // ignored
+		if (TrackEnvelope* currentEnvelope = HwndToEnvelope(hwnd,pt))
 		{
 			if (currentEnvelope == envelope)
 			{
@@ -2280,7 +2335,7 @@ int GetTrackEnvHeight (TrackEnvelope* envelope, int* offsetY, bool drawableRange
 		}
 		else
 		{
-			int overlapLimit; GetConfig("env_ol_minh", overlapLimit);
+			const int overlapLimit = ConfigVar<int>("env_ol_minh").value_or(0);
 			bool overlapEnv = (overlapLimit >= 0) ? (true) : (false);
 
 			int trackGapTop, trackGapBottom;
@@ -2371,19 +2426,30 @@ void MoveArrange (double amountTime)
 	double startTime, endTime;
 	GetWindowRect(GetArrangeWnd(), &r);
 
-	GetSet_ArrangeView2(NULL, false, r.left, r.right-SCROLLBAR_W, &startTime, &endTime);
+	GetSetArrangeView(NULL, false, &startTime, &endTime);
 	startTime += amountTime;
 	endTime += amountTime;
-	GetSet_ArrangeView2(NULL, true, r.left, r.right-SCROLLBAR_W, &startTime, &endTime);
+	GetSetArrangeView(NULL, true, &startTime, &endTime);
 }
 
 void GetSetArrangeView (ReaProject* proj, bool set, double* start, double* end)
 {
-	if (start && end)
+	if (!start || !end) return;
+
+	double s=2.0, e=1.0; // start>end to detect mordern versions of GetSet_ArrangeView2()
+	GetSet_ArrangeView2(proj, false, 0, 0, &s, &e); // full arrange view's start/end time -- v5.12pre4+ only
+	if (s < e)
+	{
+		if (!set) { *start=s; *end=e; }
+		else GetSet_ArrangeView2(proj, true, 0, 0, start, end);
+		return;
+	}
+
+	// legacy code if REAPER < v5.12pre4
 	{
 		RECT r;
 		GetWindowRect(GetArrangeWnd(), &r);
-		GetSet_ArrangeView2(NULL, set, r.left, r.right-SCROLLBAR_W, start, end);
+		GetSet_ArrangeView2(proj, set, r.left, r.right-SCROLLBAR_W, start, end);
 	}
 }
 
@@ -2393,11 +2459,11 @@ void CenterArrange (double position)
 	double startTime, endTime;
 	GetWindowRect(GetArrangeWnd(), &r);
 
-	GetSet_ArrangeView2(NULL, false, r.left, r.right-SCROLLBAR_W, &startTime, &endTime);
+	GetSetArrangeView(NULL, false, &startTime, &endTime);
 	double halfSpan = (endTime - startTime) / 2;
 	startTime = position - halfSpan;
 	endTime = position + halfSpan;
-	GetSet_ArrangeView2(NULL, true, r.left, r.right-SCROLLBAR_W, &startTime, &endTime);
+	GetSetArrangeView(NULL, true, &startTime, &endTime);
 }
 
 void SetArrangeStart (double start)
@@ -2408,7 +2474,7 @@ void SetArrangeStart (double start)
 
 	si.nPos = RoundToInt(start * GetHZoomLevel()); // OCD alert: GetSet_ArrangeView2() can sometimes be off for one pixel (probably round vs trunc issue)
 	CoolSB_SetScrollInfo(GetArrangeWnd(), SB_HORZ, &si, true);
-	SendMessage(GetArrangeWnd(), WM_HSCROLL, SB_THUMBPOSITION, NULL);
+	SendMessage(GetArrangeWnd(), WM_HSCROLL, SB_THUMBPOSITION, 0);
 }
 
 void MoveArrangeToTarget (double target, double reference)
@@ -2439,7 +2505,7 @@ void ScrollToTrackIfNotInArrange (MediaTrack* track)
 	{
 		si.nPos = offsetY;
 		CoolSB_SetScrollInfo(hwnd, SB_VERT, &si, true);
-		SendMessage(hwnd, WM_VSCROLL, si.nPos << 16 | SB_THUMBPOSITION, NULL);
+		SendMessage(hwnd, WM_VSCROLL, si.nPos << 16 | SB_THUMBPOSITION, 0);
 	}
 }
 
@@ -2676,7 +2742,7 @@ HWND FindReaperWndByName (const char* name)
 
 HWND FindFloatingToolbarWndByName (const char* toolbarName)
 {
-	int customMenu; GetConfig("custommenu", customMenu);
+	const int customMenu = ConfigVar<int>("custommenu").value_or(0);
 	bool checkForNoCaption = !!GetBit(customMenu, 8);
 
 	#ifdef _WIN32
@@ -2809,11 +2875,26 @@ HWND GetMediaExplorerWnd ()
 	return FindReaperWndByPreparedString(s_name);
 }
 
-HWND GetMcpWnd ()
+HWND GetMcpWnd (bool &isContainer)
 {
+	isContainer = false;
 	if (HWND mixer = GetMixerWnd())
 	{
-		HWND hwnd = FindWindowEx(mixer, NULL, NULL, NULL);
+		HWND hwnd = FindWindowEx(mixer, NULL, "REAPERMCPDisplay", "");
+#ifdef __APPLE__
+		// workaround: old macOS swell FindWindowEx() is broken when searching by classname
+		char buf[1024];
+		if (hwnd && (!GetClassName(hwnd,buf,sizeof(buf)) || strcmp(buf,"REAPERMCPDisplay")))
+			hwnd=NULL;
+#endif
+		if (hwnd)
+		{
+			isContainer = true;
+			return hwnd;
+		}
+
+		// legacy - 5.x releases
+		hwnd = FindWindowEx(mixer, NULL, NULL, NULL);
 		while (hwnd)
 		{
 			if ((MediaTrack*)GetWindowLongPtr(hwnd, GWLP_USERDATA) != GetMasterTrack(NULL)) // skip master track
@@ -2824,11 +2905,26 @@ HWND GetMcpWnd ()
 	return NULL;
 }
 
-HWND GetTcpWnd ()
+HWND GetTcpWnd (bool &isContainer)
 {
+	static bool s_is_container;
 	static HWND s_hwnd = NULL;
+
 	if (!s_hwnd)
 	{
+		s_hwnd = FindWindowEx(g_hwndParent, NULL, "REAPERTCPDisplay", NULL);
+#ifdef __APPLE__
+		// workaround: old macOS swell FindWindowEx() is broken when searching by classname
+		char buf[1024];
+		if (s_hwnd && (!GetClassName(s_hwnd,buf,sizeof(buf)) || strcmp(buf,"REAPERTCPDisplay")))
+			s_hwnd=NULL;
+#endif
+		if (s_hwnd) s_is_container = true;
+	}
+
+	if (!s_hwnd)
+	{
+		// legacy - 5.x releases
 		MediaTrack* track = GetTrack(NULL, 0);
 		for (int i = 0; i < CountTracks(NULL); ++i)
 		{
@@ -2847,7 +2943,6 @@ HWND GetTcpWnd ()
 		int masterVis = 0;
 		if (!track && !IsMasterVisible)
 		{
-			PreventUIRefresh(1);
 			masterVis = SetMasterTrackVisibility(GetMasterTrackVisibility() | 1);
 		}
 
@@ -2877,16 +2972,21 @@ HWND GetTcpWnd ()
 		// Restore TCP master to previous state
 		if (!track && !IsMasterVisible)
 		{
-			PreventUIRefresh(-1);
 			SetMasterTrackVisibility(masterVis);
 		}
 	}
+
+	isContainer = s_is_container;
 	return s_hwnd;
 }
 
-HWND GetTcpTrackWnd (MediaTrack* track)
+HWND GetTcpTrackWnd (MediaTrack* track, bool &isContainer)
 {
-	HWND hwnd = GetWindow(GetTcpWnd(), GW_CHILD);
+	HWND par = GetTcpWnd(isContainer);
+	if (isContainer)
+		return par;
+
+	HWND hwnd = GetWindow(par, GW_CHILD);
 	do
 	{
 		if ((MediaTrack*)GetWindowLongPtr(hwnd, GWLP_USERDATA) == track)
@@ -2973,7 +3073,7 @@ HWND GetTrackView (HWND midiEditor)
 	return trackListHwnd;
 }
 
-MediaTrack* HwndToTrack (HWND hwnd, int* hwndContext)
+MediaTrack* HwndToTrack (HWND hwnd, int* hwndContext, POINT ptScreen)
 {
 	MediaTrack* track = NULL;
 	HWND hwndParent = GetParent(hwnd);
@@ -2981,8 +3081,35 @@ MediaTrack* HwndToTrack (HWND hwnd, int* hwndContext)
 
 	if (!track)
 	{
-		HWND tcp = GetTcpWnd();
-		if (hwndParent == tcp)                                               // hwnd is a track
+		bool is_container;
+		HWND tcp = GetTcpWnd(is_container);
+		if (is_container)
+		{
+			if (hwnd == tcp)
+			{
+				POINT ptloc = ptScreen;
+				ScreenToClient(hwnd,&ptloc);
+				int tracks = GetNumTracks();
+				for (int i = -1; i < tracks; ++i)
+				{
+					MediaTrack* chktrack = i<0 ? GetMasterTrack(NULL) : GetTrack(NULL, i);
+					void *p;
+					if (!(p=GetSetMediaTrackInfo(chktrack,"B_SHOWINTCP",NULL)) || !*(bool *)p) 
+						continue;
+					p = GetSetMediaTrackInfo(chktrack,"I_TCPY",NULL);
+					int ypos = p ? *(int *)p : 0;
+					p = GetSetMediaTrackInfo(chktrack,"I_TCPH",NULL);
+					int h = p ? *(int *)p : 0;
+					if (ptloc.y >= ypos && ptloc.y < ypos + h)
+					{
+						track = chktrack;
+						break;
+					}
+
+				}
+			}
+		}
+		else if (hwndParent == tcp)                                               // hwnd is a track
 			track = (MediaTrack*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 		else if (GetParent(hwndParent) == tcp)                               // hwnd is vu meter inside track
 			track = (MediaTrack*)GetWindowLongPtr(hwndParent, GWLP_USERDATA);
@@ -2995,13 +3122,50 @@ MediaTrack* HwndToTrack (HWND hwnd, int* hwndContext)
 
 	if (!track)
 	{
-		HWND mcp = GetMcpWnd();
+		bool is_container;
+		HWND mcp = GetMcpWnd(is_container);
 		HWND mixer = GetParent(mcp);
 		HWND mixerMaster = GetMixerMasterWnd();
 		HWND hwndPParent = GetParent(hwndParent);
 
-		if (hwndParent == mcp || hwndParent == mixer || hwndParent == mixerMaster)         // hwnd is a track
+		if (is_container)
+		{
+			if (hwnd == mcp)
+			{
+				POINT ptloc = ptScreen;
+				ScreenToClient(hwnd,&ptloc);
+				int tracks = GetNumTracks();
+				for (int i = 0; i < tracks; ++i)
+				{
+					MediaTrack* chktrack = GetTrack(NULL, i);
+					void *p;
+					if (!(p=GetSetMediaTrackInfo(chktrack,"B_SHOWINMIXER",NULL)) || !*(bool *)p) 
+						continue;
+					p = GetSetMediaTrackInfo(chktrack,"I_MCPX",NULL);
+					const int xpos = p ? *(int *)p : 0;
+					p = GetSetMediaTrackInfo(chktrack,"I_MCPW",NULL);
+					const int w = p ? *(int *)p : 0;
+					if (ptloc.x < xpos || ptloc.x >= xpos + w) 
+						continue;
+					p = GetSetMediaTrackInfo(chktrack,"I_MCPY",NULL);
+					const int ypos = p ? *(int *)p : 0;
+					p = GetSetMediaTrackInfo(chktrack,"I_MCPH",NULL);
+					const int h = p ? *(int *)p : 0;
+					if (ptloc.y >= ypos && ptloc.y < ypos + h)
+					{
+						track = chktrack;
+						break;
+					}
+				}
+			}
+			else if (mixerMaster && (hwnd == mixerMaster || hwndParent == mixerMaster))
+				track = GetMasterTrack(NULL);
+		}
+		else if (hwndParent == mcp || hwndParent == mixer || hwndParent == mixerMaster)         // hwnd is a track
+		{
 			track = (MediaTrack*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+			if (hwndParent == mixerMaster && !track) track = GetMasterTrack(NULL);
+		}
 		else if (hwndPParent == mcp || hwndPParent == mixer || hwndPParent == mixerMaster) // hwnd is vu meter inside track
 			track = (MediaTrack*)GetWindowLongPtr(hwndParent, GWLP_USERDATA);
 
@@ -3018,9 +3182,48 @@ MediaTrack* HwndToTrack (HWND hwnd, int* hwndContext)
 	return track;
 }
 
-TrackEnvelope* HwndToEnvelope (HWND hwnd)
+TrackEnvelope* HwndToEnvelope (HWND hwnd, POINT ptScreen)
 {
-	if (GetParent(hwnd) == GetTcpWnd())
+	bool is_container;
+	HWND tcp = GetTcpWnd(is_container);
+	if (is_container)
+	{
+		if (hwnd == tcp)
+		{
+			POINT ptloc = ptScreen;
+			ScreenToClient(hwnd,&ptloc);
+			const int tracks = GetNumTracks();
+			for (int i = -1; i < tracks; ++i)
+			{
+				MediaTrack* chktrack = i<0 ? GetMasterTrack(NULL) : GetTrack(NULL, i);
+				void *p;
+				if (!(p=GetSetMediaTrackInfo(chktrack,"B_SHOWINTCP",NULL)) || !*(bool *)p) 
+					continue;
+				p = GetSetMediaTrackInfo(chktrack,"I_TCPY",NULL);
+				int ypos = p ? *(int *)p : 0;
+				p = GetSetMediaTrackInfo(chktrack,"I_WNDH",NULL); // includes env lanes
+				int h = p ? *(int *)p : 0;
+				if (ptloc.y < ypos || ptloc.y >= ypos + h) continue;
+
+				// enumerate track envelopes
+				const int envs = CountTrackEnvelopes(chktrack);
+				for (int e = 0; e < envs; ++e)
+				{
+					TrackEnvelope* env = GetTrackEnvelope(chktrack,e);
+					if (GetEnvelopeInfo_Value) // should always be true if a container
+					{
+						double y = GetEnvelopeInfo_Value(env,"I_TCPY");
+						double h = GetEnvelopeInfo_Value(env,"I_TCPH");
+						if (ptloc.y >= ypos + y && ptloc.y < ypos + y + h)
+							return env;
+					}
+				}
+
+				break;
+			}
+		}
+	}
+	else if (GetParent(hwnd) == tcp)
 	{
 		TrackEnvelope* envelope = (TrackEnvelope*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
 		if (ValidatePtr(envelope, "TrackEnvelope*"))
@@ -3406,12 +3609,17 @@ HCURSOR GetSwsMouseCursor (BR_MouseCursor cursor)
 			else if (cursor == CURSOR_ZOOM_OUT)        {idc_resVal = IDC_ZOOM_OUT;          cursorFile = "sws_zoom_out";}
 			else if (cursor == CURSOR_ZOOM_UNDO)       {idc_resVal = IDC_ZOOM_UNDO;         cursorFile = "sws_zoom_undo";}
 
+			// NF Eraser tool
+			else if (cursor == CURSOR_ERASER)          {idc_resVal = IDC_ERASER;            cursorFile = "sws_eraser";}
+
+			
+
 			// Check for custom cursor file first
 			if (cursorFile)
 			{
 				#ifdef _WIN32
-					wchar_t* resourcePathWide = WideCharPlz(GetResourcePath());
-					wchar_t* cursorFileWide   = WideCharPlz(cursorFile);
+					const wstring &resourcePathWide = win32::widen(GetResourcePath());
+					const wstring &cursorFileWide   = win32::widen(cursorFile);
 
 					wstring cursorPath(resourcePathWide);
 					cursorPath.append(L"\\Cursors\\");
@@ -3421,9 +3629,6 @@ HCURSOR GetSwsMouseCursor (BR_MouseCursor cursor)
 					DWORD fileAttributes = GetFileAttributesW(cursorPath.c_str());
 					if (fileAttributes != INVALID_FILE_ATTRIBUTES && !(fileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 						s_cursors[cursor] = LoadCursorFromFileW(cursorPath.c_str());
-
-					delete[] resourcePathWide;
-					delete[] cursorFileWide;
 				#else
 					WDL_FastString cursorPath;
 					cursorPath.SetFormatted(SNM_MAX_PATH, "%s/Cursors/%s.cur", GetResourcePath(), cursorFile);
@@ -3456,14 +3661,14 @@ void GetTrackGap (int trackHeight, int* top, int* bottom)
 
 	if (top)
 	{
-		int label; GetConfig("labelitems2", label);
+		const int label = ConfigVar<int>("labelitems2").value_or(0);
 		//   draw mode        ||   name                 pitch,              gain (opposite)
 		if (!GetBit(label, 3) || (!GetBit(label, 0) && !GetBit(label, 2) && GetBit(label, 4)))
 			*top = 0;
 		else
 		{
 			int labelH = abs(SNM_GetColorTheme()->mediaitem_font.lfHeight) * 11/8;
-			int labelMinH; GetConfig("itemlabel_minheight", labelMinH);
+			const int labelMinH = ConfigVar<int>("itemlabel_minheight").value_or(0);
 
 			if (trackHeight - labelH < labelMinH)
 			{
@@ -3480,7 +3685,7 @@ void GetTrackGap (int trackHeight, int* top, int* bottom)
 		}
 	}
 	if (bottom)
-		GetConfig("trackitemgap", *bottom);
+		*bottom = ConfigVar<int>("trackitemgap").value_or(0);
 }
 
 bool IsLastTakeTooTall (int itemHeight, int averageTakeHeight, int effectiveTakeCount, int* lastTakeHeight)
@@ -3530,7 +3735,7 @@ int GetMinTakeHeight (MediaTrack* track, int takeCount, int trackHeight, int ite
 	int trackTop, trackBottom;
 	GetTrackGap(trackHeight, &trackTop, &trackBottom);
 
-	int overlappingItems; GetConfig("projtakelane", overlappingItems);
+	int overlappingItems = ConfigVar<int>("projtakelane").value_or(0);
 	if (GetBit(overlappingItems, 1))
 	{
 		if (itemHeight == (trackHeight - trackTop - trackBottom))
@@ -3586,7 +3791,7 @@ int GetTakeHeight (MediaItem_Take* take, MediaItem* item, int id, int* offsetY, 
 	int takeOffset = trackOffset;
 	int itemH = GetItemHeight(validItem, &takeOffset, trackHeight, takeOffset);
 
-	int takeLanes; GetConfig("projtakelane", takeLanes);
+	const int takeLanes = ConfigVar<int>("projtakelane").value_or(0);
 	int takeH = 0;
 
 	// Take lanes displayed

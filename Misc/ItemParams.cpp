@@ -68,7 +68,8 @@ void LoopItemSection(COMMAND_T*)
 {
 	WDL_PtrList<void> items;
 	WDL_PtrList<void> sections;
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(0, i);
 		items.Add(item);
@@ -148,8 +149,9 @@ void MoveItemRightToCursor(COMMAND_T* = NULL)
 void InsertFromTrackName(COMMAND_T*)
 {
 	WDL_PtrList<void> tracks;
-	for (int i = 0; i < CountSelectedTracks(0); i++)
-		tracks.Add(GetSelectedTrack(0, i));
+	const int trSelCnt = CountSelectedTracks(NULL);
+	for (int i = 0; i < trSelCnt; i++)
+		tracks.Add(GetSelectedTrack(NULL, i));
 
 	if (!tracks.GetSize())
 		return;
@@ -207,7 +209,8 @@ double QuantizeTime(double dTime, double dMin, double dMax)
 void QuantizeItemEdges(COMMAND_T* t)
 {
 	// Eventually a dialog?  for now quantize to grid
-	for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		double dStart = *(double*)GetSetMediaItemInfo(item, "D_POSITION", NULL);
@@ -257,7 +260,8 @@ void QuantizeItemEdges(COMMAND_T* t)
 void SetChanModeAllTakes(COMMAND_T* t)
 {
 	int mode = (int)t->user;
-	for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		for (int j = 0; j < CountTakes(item); j++)
@@ -271,7 +275,8 @@ void SetChanModeAllTakes(COMMAND_T* t)
 void SetPreservePitch(COMMAND_T* t)
 {
 	bool bPP = t->user ? true : false;
-	for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		for (int j = 0; j < CountTakes(item); j++)
@@ -284,7 +289,8 @@ void SetPreservePitch(COMMAND_T* t)
 
 void SetPitch(COMMAND_T* t)
 {
-	for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		for (int j = 0; j < CountTakes(item); j++)
@@ -304,7 +310,8 @@ void SetPitch(COMMAND_T* t)
 // Modified by SWS to change the rate of all takes and to use snap offset
 void NudgePlayrate(COMMAND_T *t)
 {
-	for(int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for(int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		double snapOffset = *(double*)GetSetMediaItemInfo(item, "D_SNAPOFFSET", NULL);
@@ -404,7 +411,7 @@ void SetItemChannels(COMMAND_T* t)
 
 void CrossfadeSelItems(COMMAND_T* t)
 {
-	double dFadeLen = fabs(*(double*)GetConfigVar("deffadelen")); // Abs because neg value means "not auto"
+	double dFadeLen = fabs(*ConfigVar<double>("deffadelen")); // Abs because neg value means "not auto"
 	double dEdgeAdj = dFadeLen / 2.0;
 	bool bChanges = false;
 
@@ -456,8 +463,14 @@ void CrossfadeSelItems(COMMAND_T* t)
 								if (take)
 								{
 									double dOffset = *(double*)GetSetMediaItemTakeInfo(take, "D_STARTOFFS", NULL);
-									dOffset -= dEdgeAdj;
+
+									// NF fix: also take Playrate into account
+									double dPlayrate = *(double*)GetSetMediaItemTakeInfo(take, "D_PLAYRATE", NULL);
+									dOffset -= (dEdgeAdj * dPlayrate);
 									GetSetMediaItemTakeInfo(take, "D_STARTOFFS", &dOffset);
+
+									// NF: fix / workaround for setting take start offset doesn't work if containing stretch markers
+									UpdateStretchMarkersAfterSetTakeStartOffset(take, dEdgeAdj * dPlayrate);
 								}
 							}
 							bChanges = true;
@@ -483,9 +496,9 @@ void SetItemLen(COMMAND_T* t)
 		return;
 
 	static double dLen = 1.0;
-	char reply[50];
+	char reply[318];
 	sprintf(reply, "%f", dLen);
-	if (GetUserInputs(__LOCALIZE("Set selected items length","sws_mbox"), 1, __LOCALIZE("New item length (s)","sws_mbox"), reply, 50))
+	if (GetUserInputs(__LOCALIZE("Set selected items length","sws_mbox"), 1, __LOCALIZE("New item length (s)","sws_mbox"), reply, sizeof(reply)))
 	{
 		dLen = atof(reply);
 		if (dLen <= 0.0)
@@ -527,7 +540,7 @@ static COMMAND_T g_commandTable[] =
 	{ { DEFACCEL, "SWS: Pitch all takes down one cent" },						"SWS_TAKESPITCH-1C",	SetPitch, NULL, -1 },
 	{ { DEFACCEL, "SWS: Pitch all takes down one semitone" },					"SWS_TAKESPITCH-1S",	SetPitch, NULL, -100 },
 	{ { DEFACCEL, "SWS: Pitch all takes down one octave" },						"SWS_TAKESPITCH-1O",	SetPitch, NULL, -1200 },
-	{ { DEFACCEL, "SWS: Crossfade adjacent selected items (move later items)" },					"SWS_CROSSFADE",		CrossfadeSelItems, },
+	{ { DEFACCEL, "SWS: Crossfade adjacent selected items (move edges of adjacent items)" },					"SWS_CROSSFADE",		CrossfadeSelItems, },
 
 	{ { DEFACCEL, "SWS: Increase item rate by ~0.6% (10 cents) preserving length, clear 'preserve pitch'" },	"FNG_NUDGERATEUP",		NudgePlayrate, NULL, 10 },
 	{ { DEFACCEL, "SWS: Decrease item rate by ~0.6% (10 cents) preserving length, clear 'preserve pitch'" },	"FNG_NUDGERATEDOWN",	NudgePlayrate, NULL, -10 },

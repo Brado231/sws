@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_RegionPlaylist.cpp
 /
-/ Copyright (c) 2012-2013 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -35,42 +35,45 @@
 #include "SnM_Util.h"
 #include "../Prompt.h"
 #include "../reaper/localize.h"
-#include "../../WDL/projectcontext.h"
+#include "WDL/projectcontext.h"
 
 
 #define RGNPL_WND_ID			"SnMRgnPlaylist"
 #define UNDO_PLAYLIST_STR		__LOCALIZE("Region Playlist edition", "sws_undo")
 
-#define DELETE_MSG				0xF000
-#define PERFORM_MSG				0xF001
-#define CROP_PRJ_MSG			0xF002
-#define NEW_PLAYLIST_MSG		0xF003
-#define COPY_PLAYLIST_MSG		0xF004
-#define DEL_PLAYLIST_MSG		0xF005
-#define REN_PLAYLIST_MSG		0xF006
-#define ADD_ALL_REGIONS_MSG		0xF007
-#define CROP_PRJTAB_MSG			0xF008
-#define APPEND_PRJ_MSG			0xF009
-#define PASTE_CURSOR_MSG		0xF00A
-#define APPEND_SEL_RGN_MSG		0xF00B
-#define PASTE_SEL_RGN_MSG		0xF00C
-#define TGL_INFINITE_LOOP_MSG	0xF00D
-#define TGL_SEEK_NOW_MSG		0xF00E
-#define TGL_SEEK_CLICK_MSG		0xF00F
-#define TGL_MOVE_CUR_MSG		0xF010
-#define OSC_START_MSG			0xF011 // 238 osc csurfs max -->
-#define OSC_END_MSG				0xF0FF // <--
-#define ADD_REGION_START_MSG	0xF100 // 1791 marker/region indexes supported (*) --> 
-#define ADD_REGION_END_MSG		0xF7FF // <--
-#define INSERT_REGION_START_MSG	0xF800 // 1791 marker/region indexes supported (*) -->
-#define INSERT_REGION_END_MSG	0xFEFF // <--
-// (*) but no max nb of supported regions/markers, of course
-
 #define OSC_CURRENT_RGN			"/snm/rgnplaylist/current"
 #define OSC_NEXT_RGN			"/snm/rgnplaylist/next"
 
 enum {
-  BTNID_LOCK=2000, //JFB would be great to have _APS_NEXT_CONTROL_VALUE *always* defined
+  DELETE_MSG=0xF000,
+  PERFORM_MSG,
+  CROP_PRJ_MSG,
+  NEW_PLAYLIST_MSG,
+  COPY_PLAYLIST_MSG,
+  DEL_PLAYLIST_MSG,
+  REN_PLAYLIST_MSG,
+  ADD_ALL_REGIONS_MSG,
+  CROP_PRJTAB_MSG,
+  APPEND_PRJ_MSG,
+  PASTE_CURSOR_MSG,
+  APPEND_SEL_RGN_MSG,
+  PASTE_SEL_RGN_MSG,
+  TGL_INFINITE_LOOP_MSG,
+  TGL_SEEK_NOW_MSG,
+  TGL_SEEK_CLICK_MSG,
+  TGL_MOVE_CUR_MSG,
+  OSC_START_MSG,                                        // 64 osc csurfs max -->
+  OSC_END_MSG = OSC_START_MSG+64,                       // <--
+  ADD_REGION_START_MSG,                                 // 1024 marker/region indexes supported (*) --> 
+  ADD_REGION_END_MSG = ADD_REGION_START_MSG+1024,       // <--
+  INSERT_REGION_START_MSG,                              // 1024 marker/region indexes supported (*) -->
+  INSERT_REGION_END_MSG = INSERT_REGION_START_MSG+1024, // <--
+                                                        // (*) but no max nb of supported regions/markers, of course
+  LAST_MSG // keep as last item!
+};
+
+enum {
+  BTNID_LOCK = LAST_MSG,
   BTNID_PLAY,
   BTNID_STOP,
   BTNID_REPEAT,
@@ -93,9 +96,6 @@ enum {
 SNM_WindowManager<RegionPlaylistWnd> g_rgnplWndMgr(RGNPL_WND_ID);
 SWSProjConfig<RegionPlaylists> g_pls;
 SNM_OscCSurf* g_osc = NULL;
-#ifdef _SNM_MUTEX
-SWS_Mutex g_plsMutex;
-#endif
 
 
 // user prefs
@@ -270,20 +270,10 @@ RegionPlaylistView::RegionPlaylistView(HWND hwndList, HWND hwndEdit)
 {
 }
 
-#ifdef _SNM_MUTEX
-void RegionPlaylistView::Update() {
-	SWS_SectionLock lock(&g_plsMutex);
-	SWS_ListView::Update();
-}
-#endif
-
 // "compact" the playlist 
 // (e.g. 2 consecutive regions "7" are merged into one with loop counter = 2)
 void RegionPlaylistView::UpdateCompact()
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (RegionPlaylist* pl = GetPlaylist())
 		for (int i=pl->GetSize()-1; i>=0 ; i--)
 			if (RgnPlaylistItem* item = pl->Get(i))
@@ -300,9 +290,6 @@ void RegionPlaylistView::UpdateCompact()
 
 void RegionPlaylistView::GetItemText(SWS_ListItem* item, int iCol, char* str, int iStrMax)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (str) *str = '\0';
 	if (RgnPlaylistItem* pItem = (RgnPlaylistItem*)item)
 	{
@@ -310,7 +297,7 @@ void RegionPlaylistView::GetItemText(SWS_ListItem* item, int iCol, char* str, in
 		{
 			case COL_RGN: {
 				RegionPlaylist* curpl = GetPlaylist();
-				_snprintfSafe(str, iStrMax, "%s %d", 
+				snprintf(str, iStrMax, "%s %d", 
 					curpl && g_playPlaylist>=0 && curpl==GetPlaylist(g_playPlaylist) ? // current playlist being played?
 					(!g_unsync && curpl->Get(g_playCur)==pItem ? UTF8_BULLET : (curpl->Get(g_playNext)==pItem ? UTF8_CIRCLE : " ")) : " ", GetMarkerRegionNumFromId(pItem->m_rgnId));
 				break;
@@ -321,9 +308,9 @@ void RegionPlaylistView::GetItemText(SWS_ListItem* item, int iCol, char* str, in
 				break;
 			case COL_RGN_COUNT:
 				if (pItem->m_cnt < 0)
-					_snprintfSafe(str, iStrMax, "%s", UTF8_INFINITY);
+					snprintf(str, iStrMax, "%s", UTF8_INFINITY);
 				else
-					_snprintfSafe(str, iStrMax, "%d", pItem->m_cnt);
+					snprintf(str, iStrMax, "%d", pItem->m_cnt);
 				break;
 			case COL_RGN_START: {
 				double pos;
@@ -349,9 +336,6 @@ void RegionPlaylistView::GetItemText(SWS_ListItem* item, int iCol, char* str, in
 
 void RegionPlaylistView::GetItemList(SWS_ListItemList* pList)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (RegionPlaylist* pl = GetPlaylist())
 		for (int i=0; i < pl->GetSize(); i++)
 			if (SWS_ListItem* item = (SWS_ListItem*)pl->Get(i))
@@ -360,9 +344,6 @@ void RegionPlaylistView::GetItemList(SWS_ListItemList* pList)
 
 void RegionPlaylistView::SetItemText(SWS_ListItem* item, int iCol, const char* str)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (RgnPlaylistItem* pItem = (RgnPlaylistItem*)item)
 	{
 		switch (iCol)
@@ -392,8 +373,7 @@ void RegionPlaylistView::OnItemClk(SWS_ListItem* item, int iCol, int iKeyState)
 	if (RgnPlaylistItem* pItem = (RgnPlaylistItem*)item)
 	{
 		if (g_optionFlags&2)
-			if (RgnPlaylistItem* pItem = (RgnPlaylistItem*)item)
-				SetEditCurPos2(NULL, pItem->GetPos(), true, false); // move edit curdor, seek done below
+			SetEditCurPos2(NULL, pItem->GetPos(), true, false); // move edit curdor, seek done below
 
 		// do not use PERFORM_MSG here: depends on play state in this case
 		if ((g_optionFlags&1) && GetPlaylist() && (GetPlayState()&1))
@@ -410,9 +390,6 @@ void RegionPlaylistView::OnItemDblClk(SWS_ListItem* item, int iCol)
 // "disable" sort
 int RegionPlaylistView::OnItemSort(SWS_ListItem* _item1, SWS_ListItem* _item2) 
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	int i1=-1, i2=-1;
 	if (RegionPlaylist* pl = GetPlaylist())
 	{
@@ -436,9 +413,6 @@ void RegionPlaylistView::OnBeginDrag(SWS_ListItem* item) {
 
 void RegionPlaylistView::OnDrag()
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	RegionPlaylist* pl  = GetPlaylist();
 	if (!pl) return;
 
@@ -470,9 +444,6 @@ void RegionPlaylistView::OnDrag()
 
 void RegionPlaylistView::OnEndDrag()
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	UpdateCompact();
 	if (m_draggedItems.GetSize()) {
 		Undo_OnStateChangeEx2(NULL, UNDO_PLAYLIST_STR, UNDO_STATE_MISCCFG, -1);
@@ -497,7 +468,7 @@ void GetMonitoringInfo(WDL_FastString* _curNum, WDL_FastString* _cur,
 			if (g_unsync)
 			{
 				_curNum->Set("!");
-				_cur->Set(__LOCALIZE("(sync!)","sws_DLG_165"));
+				_cur->Set(__LOCALIZE("<SYNC LOSS>)","sws_DLG_165"));
 			}
 			else if (RgnPlaylistItem* curItem = curpl->Get(g_playCur))
 			{
@@ -524,14 +495,14 @@ void GetMonitoringInfo(WDL_FastString* _curNum, WDL_FastString* _cur,
 			if (g_playNext<0)
 			{
 				_nextNum->Set("-");
-				_next->Set(__LOCALIZE("(end)","sws_DLG_165"));
+				_next->Set(__LOCALIZE("<END>","sws_DLG_165"));
 			}
 			else if (!g_unsync && g_rgnLoop && g_playCur>=0 && g_playCur==g_playNext)
 			{
 				if (g_rgnLoop>0)
 				{
 					_nextNum->Set(_curNum);
-					_next->SetFormatted(32, __LOCALIZE_VERFMT("(loop: %d)","sws_DLG_165"), g_rgnLoop);
+					_next->SetFormatted(32, __LOCALIZE_VERFMT("<LOOP: %d>","sws_DLG_165"), g_rgnLoop);
 				}
 				else if (g_rgnLoop<0)
 				{
@@ -643,10 +614,6 @@ void RegionPlaylistWnd::OnDestroy()
 // _flags: &1=fast update, normal/full update otherwise
 void RegionPlaylistWnd::Update(int _flags, WDL_FastString* _curNum, WDL_FastString* _cur, WDL_FastString* _nextNum, WDL_FastString* _next)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
-
 	static bool sRecurseCheck = false;
 	if (sRecurseCheck)
 		return;
@@ -686,12 +653,15 @@ void RegionPlaylistWnd::UpdateMonitoring(WDL_FastString* _curNum, WDL_FastString
 	if (g_playPlaylist>=0)
 		if (RegionPlaylist* curpl = GetPlaylist(g_playPlaylist))
 			pl.SetFormatted(128, "#%d \"%s\"", g_playPlaylist+1, curpl->m_name.Get());
-	m_monPl.SetText(g_playPlaylist>=0 ? pl.Get() : __LOCALIZE("(stopped)","sws_DLG_165"));
+	m_monPl.SetText(g_playPlaylist>=0 ? pl.Get() : __LOCALIZE("<STOPPED>","sws_DLG_165"));
 
+#ifdef _SNM_MISC
+	// big fonts with alpha doesn't work well ATM (on OS X at least), such overlapped texts look a bit clunky anyway...
 	pl.Set("");
 	if (g_playPlaylist>=0)
 		pl.SetFormatted(16, "#%d", g_playPlaylist+1);
 	m_mons.SetText(0, pl.Get(), 0, 16);
+#endif
 
 	WDL_FastString *cur=_cur, *curNum=_curNum, *next=_next, *nextNum=_nextNum;
 	if (!_cur) cur = new WDL_FastString;
@@ -710,19 +680,15 @@ void RegionPlaylistWnd::UpdateMonitoring(WDL_FastString* _curNum, WDL_FastString
 	if (!_curNum) delete curNum;
 	if (!_next) delete next;
 	if (!_nextNum) delete nextNum;
-
 }
 
 void RegionPlaylistWnd::FillPlaylistCombo()
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	m_cbPlaylist.Empty();
 	for (int i=0; i < g_pls.Get()->GetSize(); i++)
 	{
 		char name[128]="";
-		_snprintfSafe(name, sizeof(name), "%d - %s", i+1, g_pls.Get()->Get(i)->m_name.Get());
+		snprintf(name, sizeof(name), "%d - %s", i+1, g_pls.Get()->Get(i)->m_name.Get());
 		m_cbPlaylist.AddItem(name);
 	}
 	m_cbPlaylist.SetCurSel(g_pls.Get()->m_editId);
@@ -730,9 +696,6 @@ void RegionPlaylistWnd::FillPlaylistCombo()
 
 void RegionPlaylistWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	switch(LOWORD(wParam))
 	{
 		case BTNID_LOCK:
@@ -777,7 +740,7 @@ void RegionPlaylistWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 				if (GetPlaylist()->GetSize()) // do not ask if empty
 				{
 					char msg[128] = "";
-					_snprintfSafe(msg, sizeof(msg), __LOCALIZE_VERFMT("Are you sure you want to delete the playlist #%d \"%s\"?","sws_DLG_165"), g_pls.Get()->m_editId+1, GetPlaylist()->m_name.Get());
+					snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Are you sure you want to delete the playlist #%d \"%s\"?","sws_DLG_165"), g_pls.Get()->m_editId+1, GetPlaylist()->m_name.Get());
 					reply = MessageBox(m_hwnd, msg, __LOCALIZE("S&M - Delete playlist","sws_DLG_165"), MB_YESNO);
 				}
 				if (reply != IDNO)
@@ -826,16 +789,16 @@ void RegionPlaylistWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 			SendMessage(m_hwnd, WM_CONTEXTMENU, 0, MAKELPARAM((UINT)(r.left), (UINT)(r.bottom+SNM_1PIXEL_Y)));
 			break;
 		case CROP_PRJ_MSG:
-			AppendPasteCropPlaylist(GetPlaylist(), 0);
+			AppendPasteCropPlaylist(GetPlaylist(), CROP_PROJECT);
 			break;
 		case CROP_PRJTAB_MSG:
-			AppendPasteCropPlaylist(GetPlaylist(), 1);
+			AppendPasteCropPlaylist(GetPlaylist(), CROP_PROJECT_TAB);
 			break;
 		case APPEND_PRJ_MSG:
-			AppendPasteCropPlaylist(GetPlaylist(), 2);
+			AppendPasteCropPlaylist(GetPlaylist(), PASTE_PROJECT);
 			break;
 		case PASTE_CURSOR_MSG:
-			AppendPasteCropPlaylist(GetPlaylist(), 3);
+			AppendPasteCropPlaylist(GetPlaylist(), PASTE_CURSOR);
 			break;
 		case DELETE_MSG:
 		{
@@ -892,7 +855,7 @@ void RegionPlaylistWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 			int x=0;
 			while(RgnPlaylistItem* item = (RgnPlaylistItem*)GetListView()->EnumSelected(&x))
 				p.Add(new RgnPlaylistItem(item->m_rgnId, item->m_cnt));
-			AppendPasteCropPlaylist(&p, LOWORD(wParam)==PASTE_SEL_RGN_MSG ? 3:2);
+			AppendPasteCropPlaylist(&p, LOWORD(wParam) == PASTE_SEL_RGN_MSG ? PASTE_CURSOR : PASTE_PROJECT);
 			break;
 		}
 		case PERFORM_MSG:
@@ -1001,9 +964,6 @@ int RegionPlaylistWnd::OnKey(MSG* _msg, int _iKeyState)
 
 void RegionPlaylistWnd::DrawControls(LICE_IBitmap* _bm, const RECT* _r, int* _tooltipHeight)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	IconTheme* it = SNM_GetIconTheme();
 	int x0=_r->left+SNM_GUI_X_MARGIN, h=SNM_GUI_TOP_H;
 	if (_tooltipHeight)
@@ -1144,9 +1104,6 @@ void RegionPlaylistWnd::OptionsMenu(HMENU _menu)
 
 HMENU RegionPlaylistWnd::OnContextMenu(int _x, int _y, bool* _wantDefaultItems)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	HMENU hMenu = CreatePopupMenu();
 	if (!g_monitorMode)
 	{
@@ -1238,7 +1195,7 @@ bool RegionPlaylistWnd::GetToolTipString(int _xpos, int _ypos, char* _bufOut, in
 				lstrcpyn(_bufOut, __LOCALIZE("Toggle monitoring/edition mode","sws_DLG_165"), _bufOutSz);
 				return true;
 			case BTNID_PLAY:
-				if (g_playPlaylist>=0) _snprintfSafe(_bufOut, _bufOutSz, __LOCALIZE_VERFMT("Playing playlist #%d","sws_DLG_165"), g_playPlaylist+1);
+				if (g_playPlaylist>=0) snprintf(_bufOut, _bufOutSz, __LOCALIZE_VERFMT("Playing playlist #%d","sws_DLG_165"), g_playPlaylist+1);
 				else lstrcpyn(_bufOut, __LOCALIZE("Play","sws_DLG_165"), _bufOutSz);
 				return true;
 			case BTNID_STOP:
@@ -1254,7 +1211,7 @@ bool RegionPlaylistWnd::GetToolTipString(int _xpos, int _ypos, char* _bufOut, in
 					char timeStr[64]="";
 					if (len >= 0.0) format_timestr_pos(len, timeStr, sizeof(timeStr), -1);
 					else lstrcpyn(timeStr, __LOCALIZE("infinite","sws_DLG_165"), sizeof(timeStr));
-					_snprintfSafe(_bufOut, _bufOutSz, __LOCALIZE_VERFMT("Edited playlist: #%d \"%s\"\nLength: %s","sws_DLG_165"), g_pls.Get()->m_editId+1, pl->m_name.Get(), timeStr);
+					snprintf(_bufOut, _bufOutSz, __LOCALIZE_VERFMT("Edited playlist: #%d \"%s\"\nLength: %s","sws_DLG_165"), g_pls.Get()->m_editId+1, pl->m_name.Get(), timeStr);
 					return true;
 				}
 			case BTNID_NEW_PLAYLIST:
@@ -1267,7 +1224,7 @@ bool RegionPlaylistWnd::GetToolTipString(int _xpos, int _ypos, char* _bufOut, in
 				lstrcpyn(_bufOut, __LOCALIZE("Crop, paste or append playlist","sws_DLG_165"), _bufOutSz);
 				return true;
 			case TXTID_MONITOR_PL:
-				if (g_playPlaylist>=0) _snprintfSafe(_bufOut, _bufOutSz, __LOCALIZE_VERFMT("Playing playlist: #%d \"%s\"","sws_DLG_165"), g_playPlaylist+1, GetPlaylist(g_playPlaylist)->m_name.Get());
+				if (g_playPlaylist>=0) snprintf(_bufOut, _bufOutSz, __LOCALIZE_VERFMT("Playing playlist: #%d \"%s\"","sws_DLG_165"), g_playPlaylist+1, GetPlaylist(g_playPlaylist)->m_name.Get());
 				return (g_playPlaylist>=0);
 		}
 	}
@@ -1286,9 +1243,6 @@ void RegionPlaylistWnd::ToggleLock()
 
 int IsInPlaylists(double _pos)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	for (int i=0; i < g_pls.Get()->GetSize(); i++)
 		if (RegionPlaylist* pl = g_pls.Get()->Get(i))
 			if (pl->IsInPlaylist(_pos, false, 0) >= 0)
@@ -1304,9 +1258,6 @@ int IsInPlaylists(double _pos)
 // never use things like playlist->Get(i+1) but this func!
 int GetNextValidItem(int _plId, int _itemId, bool _startWith, bool _repeat)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (_plId>=0 && _itemId>=0)
 	{
 		if (RegionPlaylist* pl = GetPlaylist(_plId))
@@ -1329,9 +1280,6 @@ int GetNextValidItem(int _plId, int _itemId, bool _startWith, bool _repeat)
 // never use things like playlist->Get(i-1) but this func!
 int GetPrevValidItem(int _plId, int _itemId, bool _startWith, bool _repeat)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (_plId>=0 && _itemId>=0)
 	{
 		if (RegionPlaylist* pl = GetPlaylist(_plId))
@@ -1353,16 +1301,13 @@ int GetPrevValidItem(int _plId, int _itemId, bool _startWith, bool _repeat)
 
 bool SeekItem(int _plId, int _nextItemId, int _curItemId)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (RegionPlaylist* pl = g_pls.Get()->Get(_plId))
 	{
 		// trick to stop the playlist in sync: smooth seek to the end of the project (!)
 		if (_nextItemId<0)
 		{
 			// temp override of the "stop play at project end" option
-			if (int* opt = (int*)GetConfigVar("stopprojlen")) {
+			if (ConfigVar<int> opt = "stopprojlen") {
 				g_oldStopprojlenPref = *opt;
 				*opt = 1;
 			}
@@ -1401,10 +1346,6 @@ bool SeekItem(int _plId, int _nextItemId, int _curItemId)
 // made as idle as possible, polled via SNM_CSurfRun()
 void PlaylistRun()
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
-
 	if (g_playPlaylist>=0)
 	{
 #if defined(_SNM_RGNPL_DEBUG1) || defined(_SNM_RGNPL_DEBUG2)
@@ -1413,9 +1354,13 @@ void PlaylistRun()
 		bool updated = false;
 		double pos = GetPlayPosition2Ex(NULL);
 
-		if ((pos+0.01) >= g_nextRgnPos && pos <= g_nextRgnEnd)	//JFB!! +0.01 because 'pos' can be a bit ahead of time
+		// NF: potentially fix #886
+		// it seems that if '+0.01' isn't added to 'pos' below, adjacent regions are no more occassionally skipped
+		// https://forum.cockos.com/showpost.php?p=1935561&postcount=6 and my own tests so far seem to confirm also
+		// but I'm unsure what poetential side effects this might have
+		if ((pos/*+0.01*/) >= g_nextRgnPos && pos <= g_nextRgnEnd)	//JFB!! +0.01 because 'pos' can be a bit ahead of time
 																// +1 sample block would be better, but no API..
-																// note: sync loss detection could deal with this in the worst case
+																// note: sync loss detection will deal with this in the worst case
 		{
 			// a bunch of calls end here when looping!!
 
@@ -1432,11 +1377,11 @@ void PlaylistRun()
 				{
 #ifdef _SNM_RGNPL_DEBUG1
 					 OutputDebugString("\n");
-					_snprintfSafe(dbg, sizeof(dbg), "NEXT DETECTED - pos = %f\n", pos); OutputDebugString(dbg);
-					_snprintfSafe(dbg, sizeof(dbg), "                g_curRgnPos = %f, g_curRgnEnd = %f\n", g_curRgnPos, g_curRgnEnd); OutputDebugString(dbg);
-					_snprintfSafe(dbg, sizeof(dbg), "                g_nextRgnPos = %f, g_nextRgnEnd = %f\n", g_nextRgnPos, g_nextRgnEnd); OutputDebugString(dbg);
-					_snprintfSafe(dbg, sizeof(dbg), "                g_playCur = %d, g_playNext = %d\n", g_playCur, g_playNext); OutputDebugString(dbg);
-					_snprintfSafe(dbg, sizeof(dbg), "                g_unsync = %d, g_lastRunPos = %f\n", g_unsync, g_lastRunPos); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), "NEXT DETECTED - pos = %f\n", pos); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), "                g_curRgnPos = %f, g_curRgnEnd = %f\n", g_curRgnPos, g_curRgnEnd); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), "                g_nextRgnPos = %f, g_nextRgnEnd = %f\n", g_nextRgnPos, g_nextRgnEnd); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), "                g_playCur = %d, g_playNext = %d\n", g_playCur, g_playNext); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), "                g_unsync = %d, g_lastRunPos = %f\n", g_unsync, g_lastRunPos); OutputDebugString(dbg);
 #endif
 					first = updated = true;
 					g_playCur = g_playNext;
@@ -1468,7 +1413,7 @@ void PlaylistRun()
 									g_plLoop = (cur->m_rgnId==next->m_rgnId); // valid regions at this point
 
 #ifdef _SNM_RGNPL_DEBUG1
-					_snprintfSafe(dbg, sizeof(dbg), "SEEK - Current = %d, Next = %d\n", g_playCur, nextId); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), "SEEK - Current = %d, Next = %d\n", g_playCur, nextId); OutputDebugString(dbg);
 #endif
 					if (!SeekItem(g_playPlaylist, nextId, g_playCur))
 						SeekItem(g_playPlaylist, -1, g_playCur); // end of playlist..
@@ -1490,9 +1435,9 @@ void PlaylistRun()
 			else if (!g_unsync)
 			{
 #ifdef _SNM_RGNPL_DEBUG2
-				_snprintfSafe(dbg, sizeof(dbg), ">>> SYNC LOSS - pos = %f\n", pos); OutputDebugString(dbg);
-				_snprintfSafe(dbg, sizeof(dbg), "                g_curRgnPos = %f, g_curRgnEnd = %f\n", g_curRgnPos, g_curRgnEnd); OutputDebugString(dbg);
-				_snprintfSafe(dbg, sizeof(dbg), "                g_nextRgnPos = %f, g_nextRgnEnd = %f\n", g_nextRgnPos, g_nextRgnEnd); OutputDebugString(dbg);
+				snprintf(dbg, sizeof(dbg), ">>> SYNC LOSS - pos = %f\n", pos); OutputDebugString(dbg);
+				snprintf(dbg, sizeof(dbg), "                g_curRgnPos = %f, g_curRgnEnd = %f\n", g_curRgnPos, g_curRgnEnd); OutputDebugString(dbg);
+				snprintf(dbg, sizeof(dbg), "                g_nextRgnPos = %f, g_nextRgnEnd = %f\n", g_nextRgnPos, g_nextRgnEnd); OutputDebugString(dbg);
 #endif
 				updated = g_unsync = true;
 				int spareItemId = -1;
@@ -1501,13 +1446,13 @@ void PlaylistRun()
 				if (spareItemId<0 || !SeekItem(g_playPlaylist, spareItemId, -1))
 				{
 #ifdef _SNM_RGNPL_DEBUG2
-					_snprintfSafe(dbg, sizeof(dbg), ">>> SYNC LOSS, SEEK expected region pos = %f\n", g_nextRgnPos); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), ">>> SYNC LOSS, SEEK expected region pos = %f\n", g_nextRgnPos); OutputDebugString(dbg);
 #endif
 					SeekPlay(g_nextRgnPos);	// try to resync the expected region, best effort
 				}
 #ifdef _SNM_RGNPL_DEBUG2
 				else {
-					_snprintfSafe(dbg, sizeof(dbg), ">>> SYNC LOSS, SEEK - Current = %d, Next = %d\n", -1, spareItemId); OutputDebugString(dbg);
+					snprintf(dbg, sizeof(dbg), ">>> SYNC LOSS, SEEK - Current = %d, Next = %d\n", -1, spareItemId); OutputDebugString(dbg);
 				}
 #endif
 			}
@@ -1549,9 +1494,6 @@ void PlaylistRun()
 // _itemId: callers must not use no hard coded value but GetNextValidItem() or GetPrevValidItem()
 void PlaylistPlay(int _plId, int _itemId)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (!g_pls.Get()->GetSize()) {
 		PlaylistStop();
 		MessageBox(g_rgnplWndMgr.GetMsgHWND(), __LOCALIZE("No playlist defined!\nUse the tiny button \"+\" to add one.","sws_DLG_165"), __LOCALIZE("S&M - Error","sws_DLG_165"),MB_OK);
@@ -1563,7 +1505,7 @@ void PlaylistPlay(int _plId, int _itemId)
 	{
 		PlaylistStop();
 		char msg[128] = "";
-		_snprintfSafe(msg, sizeof(msg), __LOCALIZE_VERFMT("Unknown playlist #%d!","sws_DLG_165"), _plId+1);
+		snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Unknown playlist #%d!","sws_DLG_165"), _plId+1);
 		MessageBox(g_rgnplWndMgr.GetMsgHWND(), msg, __LOCALIZE("S&M - Error","sws_DLG_165"),MB_OK);
 		return;
 	}
@@ -1576,7 +1518,7 @@ void PlaylistPlay(int _plId, int _itemId)
 		if (num>0)
 		{
 			char msg[256] = "";
-			_snprintfSafe(msg, sizeof(msg), __LOCALIZE_VERFMT("The playlist #%d might end unexpectedly!\nIt constains regions that start after the end of project (region %d at least).","sws_DLG_165"), _plId+1, num);
+			snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("The playlist #%d might end unexpectedly!\nIt constains regions that start after the end of project (region %d at least).","sws_DLG_165"), _plId+1, num);
 			if (IDCANCEL == MessageBox(g_rgnplWndMgr.GetMsgHWND(), msg, __LOCALIZE("S&M - Warning","sws_DLG_165"), MB_OKCANCEL)) {
 				PlaylistStop();
 				return;
@@ -1587,7 +1529,7 @@ void PlaylistPlay(int _plId, int _itemId)
 		if (num>0)
 		{
 			char msg[256] = "";
-			_snprintfSafe(msg, sizeof(msg), __LOCALIZE_VERFMT("The playlist #%d might not work as expected!\nIt contains nested markers/regions (inside region %d at least).","sws_DLG_165"), _plId+1, num);
+			snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("The playlist #%d might not work as expected!\nIt contains nested markers/regions (inside region %d at least).","sws_DLG_165"), _plId+1, num);
 			if (IDCANCEL == MessageBox(g_rgnplWndMgr.GetMsgHWND(), msg, __LOCALIZE("S&M - Warning","sws_DLG_165"), MB_OKCANCEL)) {
 				PlaylistStop();
 				return;
@@ -1601,7 +1543,7 @@ void PlaylistPlay(int _plId, int _itemId)
 				PlaylistStop();
 
 			// temp override of the "smooth seek" option
-			if (int* opt = (int*)GetConfigVar("smoothseek")) {
+			if (ConfigVar<int> opt = "smoothseek") {
 				g_oldSeekPref = *opt;
 				*opt = 3;
 			}
@@ -1628,7 +1570,7 @@ void PlaylistPlay(int _plId, int _itemId)
 	if (g_playPlaylist<0)
 	{
 		char msg[128] = "";
-		_snprintfSafe(msg, sizeof(msg), __LOCALIZE_VERFMT("Playlist #%d: nothing to play!\n(empty playlist, empty project, removed regions, etc..)","sws_DLG_165"), _plId+1);
+		snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Playlist #%d: nothing to play!\n(empty playlist, empty project, removed regions, etc..)","sws_DLG_165"), _plId+1);
 		MessageBox(g_rgnplWndMgr.GetMsgHWND(), msg, __LOCALIZE("S&M - Error","sws_DLG_165"),MB_OK);
 	}
 }
@@ -1661,6 +1603,22 @@ void PlaylistSeekPrevNext(COMMAND_T* _ct)
 	}
 }
 
+// Seek prev/next region based on current playing region
+void PlaylistSeekPrevNextCurBased(COMMAND_T* _ct)
+{
+	if (g_playPlaylist<0)
+		PlaylistPlay(NULL);
+	else
+	{
+		int itemId;
+		if ((int)_ct->user>0)
+			itemId = GetNextValidItem(g_playPlaylist, g_playCur, false, true);
+		else
+			itemId = GetPrevValidItem(g_playPlaylist, g_playCur, false, true);
+		PlaylistPlay(g_playPlaylist, itemId);
+	}
+}
+
 void PlaylistStop()
 {
 	if (g_playPlaylist>=0 || (GetPlayStateEx(NULL)&1) == 1)
@@ -1674,21 +1632,18 @@ void PlaylistStop()
 
 void PlaylistStopped(bool _pause)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (g_playPlaylist>=0 && !_pause)
 	{
 		g_playPlaylist = -1;
 
 		// restore options
 		if (g_oldSeekPref >= 0)
-			if (int* opt = (int*)GetConfigVar("smoothseek")) {
+			if (ConfigVar<int> opt = "smoothseek") {
 				*opt = g_oldSeekPref;
 				g_oldSeekPref = -1;
 			}
 		if (g_oldStopprojlenPref >= 0)
-			if (int* opt = (int*)GetConfigVar("stopprojlen")) {
+			if (ConfigVar<int> opt = "stopprojlen") {
 				*opt = g_oldStopprojlenPref;
 				g_oldStopprojlenPref = -1;
 			}
@@ -1732,6 +1687,23 @@ int IsPlaylistRepeat(COMMAND_T*) {
 	return g_repeatPlaylist;
 }
 
+// VT: get/set g_seekImmediate
+void SetPlaylistOptionSmoothSeek(COMMAND_T* _ct)
+{
+	int mode = _ct ? (int)_ct->user : -1; // toggle if no COMMAND_T is specified
+	switch(mode) {
+		case -1: g_seekImmediate=!g_seekImmediate; break;
+		case 0: g_seekImmediate=false; break;
+		case 1: g_seekImmediate=true; break;
+	}
+	if (RegionPlaylistWnd* w = g_rgnplWndMgr.Get())
+		w->Update();
+}
+
+int IsPlaylistOptionSmoothSeek(COMMAND_T*) {
+	return g_seekImmediate;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Editing features
@@ -1739,22 +1711,18 @@ int IsPlaylistRepeat(COMMAND_T*) {
 
 //JFB nothing to see here.. please move on :)
 // (doing things that are not really possible with the API (v4.3) => macro-ish, etc..)
-// _mode: 0=crop current project, 1=crop to new project tab, 2=append to current project, 3=paste at cursor position
 // note: moves/copies env points too, makes polled items, etc.. according to user prefs
 //JFB TODO? crop => markers removed
-void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode)
+void AppendPasteCropPlaylist(RegionPlaylist* _playlist, const AppendPasteCropPlaylist_Mode _mode)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	if (!_playlist || !_playlist->GetSize())
 		return;
 
 	int rgnNum = _playlist->IsInfinite();
-	if (rgnNum>=0)
+	if (rgnNum >= 0)
 	{
 		char msg[256] = "";
-		_snprintfSafe(msg, sizeof(msg), __LOCALIZE_VERFMT("Paste/crop aborted: infinite loop (for region %d at least)!","sws_DLG_165"), rgnNum);
+		snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Paste/crop aborted: infinite loop (for region %d at least)!","sws_DLG_165"), rgnNum);
 		MessageBox(g_rgnplWndMgr.GetMsgHWND(), msg, __LOCALIZE("S&M - Error","sws_DLG_165"),MB_OK);
 		return;
 	}
@@ -1763,22 +1731,23 @@ void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode)
 	double prjlen=SNM_GetProjectLength(), startPos=prjlen, endPos=prjlen;
 
 	// insert empty space?
-	if (_mode==3)
+	if (_mode == PASTE_CURSOR)
 	{
 		startPos = endPos = GetCursorPositionEx(NULL);
-		if (startPos<prjlen)
+		if (startPos < prjlen)
 		{
 			// not _playlist->IsInPlaylist()!
-			if (GetPlaylist()->IsInPlaylist(startPos, false, 0) >=0 ) {
+			if (GetPlaylist()->IsInPlaylist(startPos, false, 0) >= 0)
+			{
 				MessageBox(g_rgnplWndMgr.GetMsgHWND(), 
 					__LOCALIZE("Aborted: pasting inside a region which is used in the playlist!","sws_DLG_165"),
 					__LOCALIZE("S&M - Error","sws_DLG_165"), MB_OK);
 				return;
 			}
-			if (int usedId = IsInPlaylists(startPos) >=0)
+			if (int usedId = IsInPlaylists(startPos) >= 0)
 			{
 				char msg[256] = "";
-				_snprintfSafe(msg, sizeof(msg), __LOCALIZE_VERFMT("Warning: pasting inside a region that belongs to playlist #%d!\nAre you sure you want to continue?","sws_DLG_165"), usedId+1);
+				snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Warning: pasting inside a region that belongs to playlist #%d!\nAre you sure you want to continue?","sws_DLG_165"), usedId+1);
 				if (IDNO == MessageBox(g_rgnplWndMgr.GetMsgHWND(), msg, __LOCALIZE("S&M - Warning","sws_DLG_165"), MB_YESNO))
 					return;
 			}
@@ -1792,20 +1761,16 @@ void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode)
 
 //	OnStopButton();
 
-	// make sure some envelope options are enabled: move with items + add edge points
-	int oldOpt[2] = {-1,-1};
-	int* options[2] = {NULL,NULL};
-	if ((options[0] = (int*)GetConfigVar("envattach"))) {
-		oldOpt[0] = *options[0];
-		*options[0] = 1;
-	}
-	if ((options[1] = (int*)GetConfigVar("env_reduce"))) {
-		oldOpt[1] = *options[1];
-		*options[1] = 2;
-	}
+	ConfigVarOverride<int> options[] {
+		{"env_reduce",     2}, // add edge points
+		{"envattach",      1}, // move with items
+		{"projgroupover",  1}, // disable item grouping
+		{"splitautoxfade", 0}, // disable overlapping items when splitting
+	};
+	(void)options;
 
 	WDL_PtrList_DeleteOnDestroy<MarkerRegion> rgns;
-	for (int i=0; i<_playlist->GetSize(); i++)
+	for (int i=0; i < _playlist->GetSize(); i++)
 	{
 		if (RgnPlaylistItem* plItem = _playlist->Get(i))
 		{
@@ -1825,53 +1790,53 @@ void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode)
 
 				WDL_PtrList<void> itemsToKeep;
 				GetItemsInInterval(&itemsToKeep, rgnpos, rgnend, false);
+				// store regions
+				bool found = false;
+				for (int k = 0; !found && k<rgns.GetSize(); k++)
+					found |= (rgns.Get(k)->GetNum() == rgnnum);
+				if (!found)
+					rgns.Add(new MarkerRegion(true, endPos-startPos, endPos+rgnend-rgnpos-startPos, rgnname, rgnnum, rgncol));
+
+				// store data needed to "unsplit"
+				// note: not needed when croping as those items will get removed
+				WDL_PtrList_DeleteOnDestroy<SNM_ItemChunk> itemSates;
+				if (_mode == PASTE_PROJECT || _mode == PASTE_CURSOR)
 				{
-					// store regions
-					bool found = false;
-					for (int k=0; !found && k<rgns.GetSize(); k++)
-						found |= (rgns.Get(k)->GetNum() == rgnnum);
-					if (!found)
-						rgns.Add(new MarkerRegion(true, endPos-startPos, endPos+rgnend-rgnpos-startPos, rgnname, rgnnum, rgncol));
+					for (int j = 0; j < itemsToKeep.GetSize(); j++)
+						itemSates.Add(new SNM_ItemChunk((MediaItem*)itemsToKeep.Get(j)));
+				}
 
-					// store data needed to "unsplit"
-					// note: not needed when croping as those items will get removed
-					WDL_PtrList_DeleteOnDestroy<SNM_ItemChunk> itemSates;
-					if (_mode==2 || _mode==3)
-						for (int j=0; j < itemsToKeep.GetSize(); j++)
-							itemSates.Add(new SNM_ItemChunk((MediaItem*)itemsToKeep.Get(j)));
+				WDL_PtrList<void> splitItems;
+				SplitSelectItemsInInterval(NULL, rgnpos, rgnend, false, _mode == PASTE_PROJECT || _mode == PASTE_CURSOR ? &splitItems : NULL);
 
-					WDL_PtrList<void> splitItems;
-					SplitSelectItemsInInterval(NULL, rgnpos, rgnend, false, _mode==2 || _mode==3 ? &splitItems : NULL);
+				// REAPER "bug": the last param of ApplyNudge() is ignored although
+				// it is used in duplicate mode => use a loop instead
+				for (int k = 0; k < plItem->m_cnt; k++)
+				{
+					DupSelItems(NULL, endPos-rgnpos, &itemsToKeep); // overrides the native ApplyNudge()
+					endPos += (rgnend-rgnpos);
+				}
 
-					// REAPER "bug": the last param of ApplyNudge() is ignored although
-					// it is used in duplicate mode => use a loop instead
-					if (plItem->m_cnt>0)
-						for (int k=0; k < plItem->m_cnt; k++) {
-							DupSelItems(NULL, endPos-rgnpos, &itemsToKeep); // overrides the native ApplyNudge()
-							endPos += (rgnend-rgnpos);
-						}
+				// "unsplit" items
+				for (int j = 0; j < itemSates.GetSize(); j++)
+				{
+					if (SNM_ItemChunk* ic = itemSates.Get(j)) {
+						SNM_ChunkParserPatcher p(ic->m_item);
+						p.SetChunk(ic->m_chunk.Get());
+					}
+				}
 
-					// "unsplit" items
-					for (int j=0; j < itemSates.GetSize(); j++)
-						if (SNM_ItemChunk* ic = itemSates.Get(j)) {
-								SNM_ChunkParserPatcher p(ic->m_item);
-								p.SetChunk(ic->m_chunk.Get());
-							}
+				DeleteMediaItemsByName("<S&M Region Playlist - TEMP>");
 
-					DeleteMediaItemsByName("<S&M Region Playlist - TEMP>");
-
-					for (int j=0; j < splitItems.GetSize(); j++)
-						if (MediaItem* item = (MediaItem*)splitItems.Get(j))
-							if (itemsToKeep.Find(item) < 0)
-								DeleteTrackMediaItem(GetMediaItem_Track(item), item); // might have been deleted above already (no-op)
+				for (int j=0; j < splitItems.GetSize(); j++)
+				{
+					if (MediaItem* item = (MediaItem*)splitItems.Get(j))
+						if (itemsToKeep.Find(item) < 0)
+							DeleteTrackMediaItem(GetMediaItem_Track(item), item); // might have been deleted above already (no-op)
 				}
 			}
 		}
 	}
-
-	// restore options
-	if (options[0]) *options[0] = oldOpt[0];
-	if (options[1]) *options[1] = oldOpt[1];
 
 	// nothing done..
 	if (!updated)
@@ -1882,7 +1847,7 @@ void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode)
 
 	///////////////////////////////////////////////////////////////////////////
 	// append/paste to current project
-	if (_mode == 2 || _mode == 3)
+	if (_mode == PASTE_PROJECT || _mode == PASTE_CURSOR)
 	{
 //		Main_OnCommand(40289, 0); // unselect all items
 		SetEditCurPos2(NULL, endPos, true, false);
@@ -1921,8 +1886,7 @@ void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode)
 	if (g_pls.Get()->m_editId < 0)
 		g_pls.Get()->m_editId = 0; // just in case..
 
-	// crop current proj?
-	if (!_mode)
+	if (_mode == CROP_PROJECT)
 	{
 		// clear time sel + edit cursor position
 		GetSet_LoopTimeRange(true, false, &g_d0, &g_d0, false);
@@ -2003,7 +1967,7 @@ void AppendPasteCropPlaylist(RegionPlaylist* _playlist, int _mode)
 }
 
 void AppendPasteCropPlaylist(COMMAND_T* _ct) {
-	AppendPasteCropPlaylist(GetPlaylist(), (int)_ct->user);
+	AppendPasteCropPlaylist(GetPlaylist(), static_cast<AppendPasteCropPlaylist_Mode>(_ct->user));
 }
 
 
@@ -2038,9 +2002,6 @@ static bool ProcessExtensionLine(const char *line, ProjectStateContext *ctx, boo
 
 	if (!strcmp(lp.gettoken_str(0), "<S&M_RGN_PLAYLIST"))
 	{
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 		if (RegionPlaylist* playlist = g_pls.Get()->Add(new RegionPlaylist(lp.gettoken_str(1))))
 		{
 			int success;
@@ -2072,9 +2033,6 @@ static bool ProcessExtensionLine(const char *line, ProjectStateContext *ctx, boo
 
 static void SaveExtensionConfig(ProjectStateContext *ctx, bool isUndo, struct project_config_extension_t *reg)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	for (int j=0; j < g_pls.Get()->GetSize(); j++)
 	{
 		WDL_FastString confStr("<S&M_RGN_PLAYLIST "), escStr;
@@ -2100,9 +2058,6 @@ static void SaveExtensionConfig(ProjectStateContext *ctx, bool isUndo, struct pr
 
 static void BeginLoadProjectState(bool isUndo, struct project_config_extension_t *reg)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_plsMutex);
-#endif
 	g_pls.Cleanup();
 	g_pls.Get()->Empty(true);
 	g_pls.Get()->m_editId=0;

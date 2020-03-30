@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2013-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -76,8 +76,8 @@ public:
 	BR_Envelope (const BR_Envelope& envelope);
 	~BR_Envelope ();
 	BR_Envelope& operator=  (const BR_Envelope& envelope);
-	bool         operator== (const BR_Envelope& envelope); // This only compares points and if envelope is active (aka things that affect playback) - other
-	bool         operator!= (const BR_Envelope& envelope); // properties like type, envelope pointer, height, armed, default shape etc... are ignored)
+	bool         operator== (const BR_Envelope& envelope) const; // This only compares points and if envelope is active (aka things that affect playback) - other
+	bool         operator!= (const BR_Envelope& envelope) const; // properties like type, envelope pointer, height, armed, default shape etc... are ignored)
 
 	/* Direct point manipulation (returns false if id does not exist) (checkPosition only works for take envelopes, snapValue only for pitch envelopes) */
 	bool GetPoint (int id, double* position, double* value, int* shape, double* bezier);
@@ -140,6 +140,7 @@ public:
 	bool IsInLane ();
 	bool IsArmed ();
 	bool IsScaledToFader ();
+	int GetAIoptions();
 	int GetLaneHeight ();
 	int GetDefaultShape ();
 	int GetFxId ();    // Returns -1 if not FX envelope
@@ -153,6 +154,7 @@ public:
 
 	/* Set envelope properties */
 	void SetActive (bool active);
+	void SetAIoptions (int AIoptions);
 	void SetVisible (bool visible);
 	void SetInLane (bool lane);
 	void SetArmed (bool armed);
@@ -170,7 +172,7 @@ private:
 	};
 	struct EnvProperties
 	{
-		int active;
+		int active, AIoptions; // automation items options, second ACT token in track env. chunk
 		int visible, lane, visUnknown;
 		int height, heightUnknown;
 		int armed;
@@ -184,6 +186,23 @@ private:
 		EnvProperties ();
 		EnvProperties (const EnvProperties& properties);
 		EnvProperties& operator=  (const EnvProperties& properties);
+		vector<WDL_FastString> automationItems;
+		//POOLEDENVINST id pos length offset rate timeBased baseline(.5=0) amplitude loop ? ?
+		// For now we're just storing as strings in properties and not handling parsing of these
+		//struct AutomationItem
+		//{
+		//	int id;
+		//	double position;
+		//	double length;
+		//	double offset;
+		//	double rate;
+		//	bool timeBased;
+		//	double baseline;
+		//	double amplitude;
+		//	bool loop;
+		//	bool extra1; // Not sure what the last 2 parameters are
+		//	bool extra2; 
+		//};
 	};
 	struct EnvPoint
 	{
@@ -201,6 +220,7 @@ private:
 		EnvPoint ();
 		EnvPoint (double position, double value, int shape, int sig, bool selected, int partial, double bezier);
 		explicit EnvPoint (double position);
+		bool operator==(const EnvPoint &) const;
 		bool ReadLine (const LineParser& lp); // use only once per object (for efficiency, tempoStr is never deleted, only appended too)
 		void Append (WDL_FastString& string, bool tempoPoint);
 		struct ComparePoints
@@ -231,15 +251,13 @@ private:
 	bool m_pointsEdited; // tells us if we can use Envelope_Evaluate() in this->ValueAtPosition()
 	double m_takeEnvOffset;
 	int m_sampleRate;
-	int m_countConseq;
 	int m_height;
 	int m_yOffset;
-	int m_count;
-	int m_countSel;
 	BR_EnvType m_takeEnvType;
 	void* m_data;
 	vector<BR_Envelope::EnvPoint> m_points;
-	vector<int> m_pointsSel;
+	bool m_rebuildConseq;
+	vector<size_t> m_pointsSel;
 	vector<IdPair> m_pointsConseq;
 	WDL_FastString m_chunkProperties;
 	WDL_FastString m_envName;
@@ -256,7 +274,7 @@ TrackEnvelope* GetTakeEnv (MediaItem_Take* take, BR_EnvType envelope);
 MediaItem_Take* GetTakeEnvParent (TrackEnvelope* envelope, BR_EnvType* type);
 MediaTrack* GetEnvParent (TrackEnvelope* envelope);
 vector<int> GetSelPoints (TrackEnvelope* envelope);
-WDL_FastString ConstructReceiveEnv (BR_EnvType type, double firstPointValue, bool hardwareSend, bool addNewLinePrefix = true);
+WDL_FastString ConstructReceiveEnv (BR_EnvType type, double firstPointValue, bool hardwareSend);
 bool ToggleShowSendEnvelope (MediaTrack* track, int sendId, BR_EnvType type);
 bool ShowSendEnvelopes (vector<MediaTrack*>& tracks, BR_EnvType envelopeTypes);
 bool EnvVis (TrackEnvelope* envelope, bool* lane);

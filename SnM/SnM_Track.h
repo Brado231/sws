@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Track.h
 /
-/ Copyright (c) 2012-2013 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -46,6 +46,7 @@ void SelOnlyTrackWithSelEnv(COMMAND_T*);
 bool LookupTrackEnvName(const char* _str, bool _allEnvs);
 void ToggleArmTrackEnv(COMMAND_T*);
 void RemoveAllEnvsSelTracks(COMMAND_T*);
+void RemoveAllEnvsSelTracksNoChunk(COMMAND_T*);
 void ToggleWriteEnvExists(COMMAND_T*);
 int WriteEnvExists(COMMAND_T*);
 
@@ -57,9 +58,6 @@ void SNM_GetSelectedTracks(ReaProject* _proj, WDL_PtrList<MediaTrack>* _trs, boo
 bool SNM_SetSelectedTracks(ReaProject* _proj, WDL_PtrList<MediaTrack>* _trs, bool _unselOthers, bool _withMaster = true);
 bool SNM_SetSelectedTrack(ReaProject* _proj, MediaTrack* _tr, bool _unselOthers, bool _withMaster = true);
 void SNM_ClearSelectedTracks(ReaProject* _proj, bool _withMaster);
-
-bool GetTrackIcon(MediaTrack* _tr, char* _fnOut, int _fnOutSz);
-bool SetTrackIcon(MediaTrack* _tr, const char* _fn);
 
 bool MakeSingleTrackTemplateChunk(WDL_FastString* _in, WDL_FastString* _out, bool _delItems, bool _delEnvs, int _tmpltIdx = 0, bool _obeyOffset = true);
 bool GetItemsSubChunk(WDL_FastString* _in, WDL_FastString* _out, int _tmpltIdx = 0);
@@ -79,9 +77,8 @@ bool SNM_TogglePlaySelTrackPreviews(const char* _fn, bool _pause, bool _loop, do
 void StopTrackPreviews(bool _selTracksOnly);
 void StopTrackPreviews(COMMAND_T*);
 
-void WaitForAllNotesOff();
-bool SendAllNotesOff(MediaTrack* _tr);
-bool SendAllNotesOff(WDL_PtrList<void>* _trs);
+bool SendAllNotesOff(WDL_PtrList<void>* _trs, int _cc_flags = 1|2);
+bool SendAllNotesOff(MediaTrack* _tr, int _cc_flags = 1|2);
 void SendAllNotesOff(COMMAND_T*);
 
 bool SNM_AddTCPFXParm(MediaTrack* _tr, int _fxId, int _prmId);

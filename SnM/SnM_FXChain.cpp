@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_FXChain.cpp
 /
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -73,6 +73,16 @@ int CopyTakeFXChain(WDL_FastString* _fxChain, int _startSelItem)
 				removedKeywords.Add("LASTSEL");
 				removedKeywords.Add("DOCKED");
 				RemoveChunkLines(fxChain, &removedKeywords, true);
+
+				// NF: fix #938
+				char TAKEFX_NCH_state[8] = "0";
+				if (p.Parse(SNM_GET_CHUNK_CHAR, 1, "ITEM", "TAKEFX_NCH", _startSelItem, 1, TAKEFX_NCH_state, NULL, NULL)) {
+					if (atoi(TAKEFX_NCH_state) > 0) {
+						fxChain->Append(">\nTAKEFX_NCH ");
+						fxChain->Append(TAKEFX_NCH_state);
+						fxChain->Append("\n");
+					}
+				}
 
 				// check fx chain consistency 
 				// note: testing the length is not enough since RemoveChunkLines() does not delete but blanks lines
@@ -169,7 +179,7 @@ void SetTakeFXChain(const char* _title, WDL_FastString* _chain, bool _activeOnly
 // Track FX chains
 ///////////////////////////////////////////////////////////////////////////////
 
-// best effort for http://github.com/Jeff0S/sws/issues/363
+// best effort for http://github.com/reaper-oss/sws/issues/363
 // update the track's nb of channels if that info exists (as a comment) in the provided chunk
 // return true if update done
 bool SetTrackChannelsForFXChain(MediaTrack* _tr, WDL_FastString* _chain)

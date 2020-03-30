@@ -1,7 +1,7 @@
 /******************************************************************************
 / Console.cpp
 /
-/ Copyright (c) 2011-2014 Tim Payne (SWS), Jeffos
+/ Copyright (c) 2011 and later Tim Payne (SWS), Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -31,6 +31,7 @@
 
 
 #include "stdafx.h"
+#include "../url.h"
 #include "../reaper/localize.h"
 #include "../Freeze/Freeze.h"
 #include "../SnM/SnM.h"
@@ -397,7 +398,7 @@ void ProcessCommand(CONSOLE_COMMAND command, const char* args)
 		case MARKER_ADD:
 			{
 				char markerStr[64];
-				_snprintf(markerStr, sizeof(markerStr), "!%s", args);
+				snprintf(markerStr, sizeof(markerStr), "!%s", args);
 				AddProjectMarker(NULL, false, GetCursorPosition(), 0.0, markerStr, -1);
 				UpdateTimeline();
 				break;
@@ -405,7 +406,7 @@ void ProcessCommand(CONSOLE_COMMAND command, const char* args)
 		case OSC_CMD:
 			{
 				char oscStr[256];
-				_snprintf(oscStr, sizeof(oscStr), "/%s", args);
+				snprintf(oscStr, sizeof(oscStr), "/%s", args);
 				SNM_SendLocalOscMessage(oscStr);
 				break;
 			}
@@ -514,14 +515,14 @@ void ProcessCommand(CONSOLE_COMMAND command, const char* args)
 			case NAME_PREFIX:
 			{
 				char cName[256];
-				_snprintf(cName, 256, "%s %s", args, (char*)GetSetMediaTrackInfo(pMt, "P_NAME", NULL));
+				snprintf(cName, 256, "%s %s", args, (char*)GetSetMediaTrackInfo(pMt, "P_NAME", NULL));
 				GetSetMediaTrackInfo(pMt, "P_NAME", cName);
 				break;
 			}
 			case NAME_SUFFIX:
 			{
 				char cName[256];
-				_snprintf(cName, 256, "%s %s", (char*)GetSetMediaTrackInfo(pMt, "P_NAME", NULL), args);
+				snprintf(cName, 256, "%s %s", (char*)GetSetMediaTrackInfo(pMt, "P_NAME", NULL), args);
 				GetSetMediaTrackInfo(pMt, "P_NAME", cName);
 				break;
 			}
@@ -539,7 +540,7 @@ void ProcessCommand(CONSOLE_COMMAND command, const char* args)
 				if (strchr(args, 'r'))
 					i |= 512;
 				else if (strchr(args, 'm'))
-					i += 4096 | (63 << 5) + 1;
+					i += 4096 | ((63 << 5) + 1);
 				GetSetMediaTrackInfo(pMt, "I_RECINPUT", &i);
 				break;
 			case COLOR_SET:
@@ -640,7 +641,7 @@ const char* StatusString(CONSOLE_COMMAND command, const char* args)
 	if (command >= NUM_COMMANDS)
 		return __LOCALIZE("Internal error, contact SWS","sws_DLG_100");
 
-	int n = sprintf(status, "%s", __localizeFunc(g_commands[command].cHelpPrefix, "sws_DLG_100", LOCALIZE_FLAG_NOCACHE));
+	int n = snprintf(status, sizeof(status), "%s", __localizeFunc(g_commands[command].cHelpPrefix, "sws_DLG_100", LOCALIZE_FLAG_NOCACHE));
 
 	// add space if localized (trailing ' ' cannot be retrieved from LangPack files)
 	if (IsLocalized() && n>0 && n<(sizeof(status)-1) && status[n-1] != ' ')
@@ -664,7 +665,7 @@ const char* StatusString(CONSOLE_COMMAND command, const char* args)
 			}
 		if (all)
 		{
-			n += sprintf(status + n, "all");
+			n += snprintf(status + n, sizeof(status) - n, "all");
 		}
 		else
 		{
@@ -676,13 +677,13 @@ const char* StatusString(CONSOLE_COMMAND command, const char* args)
 						// Really grunge string overflow check.  Can't see the status string past two lines anyway.
 						return status;
 					if (cName && cName[0])
-						n += sprintf(status + n, "[%d] %s, ", i+1, cName);
+						n += snprintf(status + n, sizeof(status) - n, "[%d] %s, ", i+1, cName);
 					else
-						n += sprintf(status + n, "[%d], ", i+1);
+						n += snprintf(status + n, sizeof(status) - n, "[%d], ", i+1);
 				}
 
 			if (n == previous_n)
-				n += sprintf(status + n, "%s", __LOCALIZE("nothing","sws_DLG_100"));
+				n += snprintf(status + n, sizeof(status) - n, "%s", __LOCALIZE("nothing","sws_DLG_100"));
 			else
 			{
 				status[n-2] = 0; // take off last ", "
@@ -692,7 +693,7 @@ const char* StatusString(CONSOLE_COMMAND command, const char* args)
 	}
 
 	if (args && args[0] && g_commands[command].iNumArgs > 0 && g_commands[command].cHelpSuffix)
-		n += sprintf(status + n, __localizeFunc(g_commands[command].cHelpSuffix, "sws_DLG_100", LOCALIZE_FLAG_VERIFY_FMTS), args);
+		n += snprintf(status + n, sizeof(status) - n, __localizeFunc(g_commands[command].cHelpSuffix, "sws_DLG_100", LOCALIZE_FLAG_VERIFY_FMTS), args);
 
 	return status;
 }
@@ -730,7 +731,7 @@ void RunConsoleCommand(COMMAND_T* ct)
 	RunConsoleCommand(strCommand);
 
 	char cUndo[256];
-	_snprintf(cUndo, sizeof(cUndo), __LOCALIZE("ReaConsole custom command %s","sws_undo"), strCommand);
+	snprintf(cUndo, sizeof(cUndo), __LOCALIZE("ReaConsole custom command %s","sws_undo"), strCommand);
 	Undo_OnStateChangeEx(cUndo, UNDO_STATE_ALL, -1); // UNDO_STATE_TRACKCFG is not enough (marker, osc, ..)
 }
 
@@ -752,7 +753,7 @@ void EditCustomCommands(COMMAND_T*)
 	char* cWindir = getenv("windir");
 	if (!cWindir)
 		return;
-	_snprintf(cNotepad, sizeof(cNotepad), "%s\\notepad.exe", cWindir);
+	snprintf(cNotepad, sizeof(cNotepad), "%s\\notepad.exe", cWindir);
 	_spawnl(_P_NOWAIT, cNotepad, cNotepad, cArg, NULL);
 #endif
 }
@@ -793,7 +794,7 @@ static accelerator_register_t g_ar = { translateAccel, TRUE, NULL };
 //!WANT_LOCALIZE_1ST_STRING_BEGIN:sws_actions
 static COMMAND_T g_commandTable[] = 
 {
-	{ { { 0, 'C', 0 }, "SWS: Open console" },								"SWSCONSOLE",       ConsoleCommand,  "SWS ReaConsole", 0, IsConsoleDisplayed },
+	{ { { FVIRTKEY, 'C', 0 }, "SWS: Open console" },								"SWSCONSOLE",       ConsoleCommand,  "SWS ReaConsole", 0, IsConsoleDisplayed },
 	{ { DEFACCEL,   "SWS: Open console and copy keystroke" },				"SWSCONSOLE2",      BringKeyCommand, NULL, },
 	{ { DEFACCEL,   "SWS: Open console with 'S' to select track(s)" },		"SWSCONSOLEEXSEL",  ConsoleCommand,  NULL,   'S' },
 	{ { DEFACCEL,   "SWS: Open console with 'n' to name track(s)" },		"SWSCONSOLENAME",   ConsoleCommand,  NULL,   'n' },
@@ -842,8 +843,8 @@ int ConsoleInit()
 		char desc[SNM_MAX_ACTION_NAME_LEN];
 		for (int i=0; i<custCmds.GetSize(); i++)
 			if (custCmds.Get(i) && custCmds.Get(i)->GetLength())
-				if (_snprintfStrict(id, sizeof(id), "SWSCONSOLE_CUST%d", i+1) > 0) {
-					_snprintfSafe(desc, sizeof(desc), __LOCALIZE_VERFMT("SWS: Run console command: %s","sws_actions"), custCmds.Get(i)->Get());
+				if (snprintfStrict(id, sizeof(id), "SWSCONSOLE_CUST%d", i+1) > 0) {
+					snprintf(desc, sizeof(desc), __LOCALIZE_VERFMT("SWS: Run console command: %s","sws_actions"), custCmds.Get(i)->Get());
 					SWSRegisterCommandExt(RunConsoleCommand, id, desc, (INT_PTR)_strdup(custCmds.Get(i)->Get()), false);
 				}
 	}
@@ -865,7 +866,7 @@ void ConsoleExit()
 bool LoadConsoleCmds(WDL_PtrList<WDL_FastString>* _outCmds)
 {
 	char buf[SNM_MAX_PATH] = "";
-	if (_outCmds && _snprintfStrict(buf, sizeof(buf), SNM_CONSOLE_FILE, GetResourcePath()) > 0)
+	if (_outCmds && snprintfStrict(buf, sizeof(buf), SNM_CONSOLE_FILE, GetResourcePath()) > 0)
 	{
 		char* c;
 		_outCmds->Empty(true);
@@ -965,7 +966,7 @@ void ReaConsoleWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 			ProcessCommand(m_cmd, m_pArgs);
 
 			char cUndo[256];
-			_snprintf(cUndo, sizeof(cUndo), __LOCALIZE("ReaConsole command %s","sws_undo"), m_strCmd);
+			snprintf(cUndo, sizeof(cUndo), __LOCALIZE("ReaConsole command %s","sws_undo"), m_strCmd);
 			Undo_OnStateChangeEx(cUndo, UNDO_STATE_ALL, -1); // UNDO_STATE_TRACKCFG is not enough (marker, osc, ..)
 
 			// close the window? if ctrl-enter was pressed by default, or enter if g_bCloseOnReturnPref is true (issue 588)
@@ -989,6 +990,13 @@ void ReaConsoleWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 			Main_OnCommand((int)wParam, (int)lParam);
 			break;
 	}
+}
+
+void ReaConsoleWnd::OnResize()
+{
+#ifdef _WIN32
+	InvalidateRect(GetDlgItem(m_hwnd, IDC_STATUS), NULL, 0);
+#endif
 }
 
 void ReaConsoleWnd::ShowConsole()

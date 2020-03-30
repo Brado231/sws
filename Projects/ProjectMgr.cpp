@@ -33,7 +33,7 @@
 #include "ProjectList.h"
 
 // Globals
-static SWSProjConfig<WDL_PtrList_DeleteOnDestroy<WDL_String> > g_relatedProjects;
+static SWSProjConfig<WDL_PtrList_DOD<WDL_String> > g_relatedProjects;
 
 #define DELWINDOW_POS_KEY "DelRelatedProjectWindowPosition"
 
@@ -42,93 +42,90 @@ static SWSProjConfig<WDL_PtrList_DeleteOnDestroy<WDL_String> > g_relatedProjects
 // ****************************************************************************
 void SaveProjectList(COMMAND_T*)
 {
+	std::vector<std::string> projectFiles;
+
 	int i = 0;
-	bool bValid = false;
-	char filename[256] = { 0, };
-	while (EnumProjects(i++, filename, 256))
+	char filename[MAX_PATH]{};
+	while (EnumProjects(i++, filename, sizeof(filename)))
+	{
 		if (filename[0])
-			bValid = true;
-	if (!bValid)
+			projectFiles.push_back(filename);
+	}
+
+	if (projectFiles.empty())
 	{
 		MessageBox(g_hwndParent, __LOCALIZE("No saved projects are open. Please save your project(s) first.","sws_mbox"), __LOCALIZE("SWS Project List Save","sws_mbox"), MB_OK);
 		return;
 	}
 
-	char cPath[256];
-	GetProjectPath(cPath, 256);
-	if (BrowseForSaveFile(__LOCALIZE("Select project list","sws_mbox"), cPath, NULL, "Reaper Project List (*.RPL)\0*.RPL\0All Files\0*.*\0", filename, 256))
+	char cPath[MAX_PATH];
+	GetProjectPath(cPath, sizeof(cPath));
+	if (!BrowseForSaveFile(__LOCALIZE("Select project list","sws_mbox"), cPath, nullptr, "Reaper Project List (*.RPL)\0*.RPL\0All Files\0*.*\0", filename, sizeof(filename)))
+		return;
+
+	std::ofstream file(win32::widen(filename).c_str());
+
+	if (!file)
 	{
-		FILE* f = fopenUTF8(filename, "w");
-		if (f)
-		{
-			i = 0;
-			while (EnumProjects(i++, filename, 256))
-			{
-				if (filename[0])
-				{
-					strncat(filename, "\r\n", 256);
-					fwrite(filename, strlen(filename), 1, f);
-				}
-			}
-			fclose(f);
-		}
-		else
-			MessageBox(g_hwndParent, __LOCALIZE("Unable to write to file.","sws_mbox"), __LOCALIZE("SWS Project List Save","sws_mbox"), MB_OK);
+		MessageBox(g_hwndParent, __LOCALIZE("Unable to write to file.","sws_mbox"), __LOCALIZE("SWS Project List Save","sws_mbox"), MB_OK);
+		return;
 	}
+
+	for (const std::string &projectfn : projectFiles)
+		file << projectfn << "\n";
+
+	file.close();
 }
 
 void OpenProjectsFromList(COMMAND_T*)
 {
-	char cPath[256];
-	GetProjectPath(cPath, 256);
-	char* filename = BrowseForFiles(__LOCALIZE("Select project list","sws_mbox"), cPath, NULL, false, "Reaper Project List (*.RPL)\0*.RPL\0All Files\0*.*\0");
-	if (filename)
+	char directory[MAX_PATH]{};
+	GetProjectPath(directory, sizeof(directory));
+
+	char *filename = BrowseForFiles(__LOCALIZE("Select project list","sws_mbox"), directory, nullptr, false, "Reaper Project List (*.RPL)\0*.RPL\0All Files\0*.*\0");
+	if (!filename)
+		return;
+
+	std::ifstream file(win32::widen(filename).c_str());
+	free(filename);
+
+	if (!file)
 	{
-		FILE* f = fopenUTF8(filename, "r");
-		if (f)
-		{
-			// Save "prompt on new project" variable
-			int iNewProjOpts;
-			int sztmp;
-			int* pNewProjOpts = (int*)get_config_var("newprojdo", &sztmp);
-			iNewProjOpts = *pNewProjOpts;
-			*pNewProjOpts = 0;
-			int i = 0;
-
-			int iProjects = -1;
-			while (EnumProjects(++iProjects, NULL, 0)); // Count projects
-			char cName[10];
-			EnumProjects(-1, cName, 10);
-
-			if (iProjects != 1 || cName[0] != 0 || GetNumTracks() != 0)
-			{
-				if (MessageBox(g_hwndParent, __LOCALIZE("Close active tabs first?","sws_mbox"), __LOCALIZE("SWS Project List Open","sws_mbox"), MB_YESNO) == IDYES)
-					Main_OnCommand(40886, 0);
-				else
-					i = 1;
-			}
-
-			while(fgets(cPath, 256, f))
-			{
-				char* pC;
-				while((pC = strchr(cPath, '\r'))) *pC = 0; // Strip newlines no matter the format
-				while((pC = strchr(cPath, '\n'))) *pC = 0;
-				if (cPath[0])
-				{
-					if (i++)
-						Main_OnCommand(41929, 0); // New project tab (ignore default template)
-					Main_openProject(cPath);
-				}
-			}
-			fclose(f);
-
-			*pNewProjOpts = iNewProjOpts;
-		}
-		else
-			MessageBox(g_hwndParent, __LOCALIZE("Unable to open file.","sws_mbox"), __LOCALIZE("SWS Project List Open","sws_mbox"), MB_OK);
-		
-		free(filename);
+		MessageBox(g_hwndParent, __LOCALIZE("Unable to open file.","sws_mbox"), __LOCALIZE("SWS Project List Open","sws_mbox"), MB_OK);
+		return;
 	}
+
+	// Save "prompt on new project" variable
+	ConfigVarOverride<int> newprojdo("newprojdo", 0);
+
+	int projectCount = 0;
+	while (EnumProjects(projectCount++, nullptr, 0)); // Count projects
+
+	char projectfn[10];
+	EnumProjects(-1, projectfn, sizeof(projectfn));
+
+	if (projectCount > 1 || projectfn[0] || GetNumTracks() > 0)
+	{
+		if (MessageBox(g_hwndParent, __LOCALIZE("Close active tabs first?","sws_mbox"), __LOCALIZE("SWS Project List Open","sws_mbox"), MB_YESNO) == IDYES)
+		{
+			Main_OnCommand(40886, 0); // File: Close all projects
+			projectCount = 0;
+		}
+	}
+
+	std::string line;
+	while (std::getline(file, line))
+	{
+		if(line.empty())
+			continue;
+
+		if (projectCount > 0)
+			Main_OnCommand(41929, 0); // New project tab (ignore default template)
+
+		Main_openProject(line.c_str());
+	}
+
+	file.close();
 }
 
 // ****************************************************************************
@@ -181,11 +178,7 @@ void OpenRelatedProject(COMMAND_T* pCmd)
 
 	// Nope, open in new tab
 	// Save "prompt on new project" variable
-	int iNewProjOpts;
-	int sztmp;
-	int* pNewProjOpts = (int*)get_config_var("newprojdo", &sztmp);
-	iNewProjOpts = *pNewProjOpts;
-	*pNewProjOpts = 0;
+	ConfigVarOverride<int> newprojdo("newprojdo", 0);
 	pProj = EnumProjects(-1, NULL, 0);
 	Main_OnCommand(41929, 0); // New project tab (ignore default template)
 	Main_openProject(pStr->Get());
@@ -196,7 +189,6 @@ void OpenRelatedProject(COMMAND_T* pCmd)
 		SelectProjectInstance(pProj);
 		g_relatedProjects.Get()->Delete((int)pCmd->user, true);
 	}
-	*pNewProjOpts = iNewProjOpts;
 }
 
 void OpenLastProject(COMMAND_T*)
@@ -220,8 +212,8 @@ static int GetLoadCommandID(int iSlot, bool bCreateNew)
 	{
 		char cID[BUFFER_SIZE];
 		char cDesc[BUFFER_SIZE];
-		_snprintf(cID, BUFFER_SIZE, "SWS_OPENRELATED%d", iSlot+1);
-		_snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("SWS: Open related project %d","sws_actions"), iSlot+1);
+		snprintf(cID, BUFFER_SIZE, "SWS_OPENRELATED%d", iSlot+1);
+		snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("SWS: Open related project %d","sws_actions"), iSlot+1);
 		iLastRegistered = iSlot;
 		return SWSRegisterCommandExt(OpenRelatedProject, cID, cDesc, iSlot, false);
 	}
@@ -302,8 +294,8 @@ void UpdateOpenProjectTabActions()
 		{
 			char cID[BUFFER_SIZE];
 			char cDesc[BUFFER_SIZE];
-			_snprintf(cID, BUFFER_SIZE, "SWS_PROJTAB%d", iActions+1);
-			_snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("SWS: Switch to project tab %d","sws_actions"), iActions+1);
+			snprintf(cID, BUFFER_SIZE, "SWS_PROJTAB%d", iActions+1);
+			snprintf(cDesc, BUFFER_SIZE, __LOCALIZE_VERFMT("SWS: Switch to project tab %d","sws_actions"), iActions+1);
 			SWSRegisterCommandExt(OpenProjectTab, cID, cDesc, iActions, false);
 		}
 }

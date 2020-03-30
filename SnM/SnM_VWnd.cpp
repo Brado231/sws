@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_VWnd.cpp
 /
-/ Copyright (c) 2012-2013 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -127,7 +127,7 @@ bool SNM_DynSizedText::HasTitleLane() {
 	return (m_visible && m_title.GetLength() && (m_position.bottom-m_position.top) > 4*GetTitleLaneHeight());
 }
 
-void SNM_DynSizedText::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect)
+void SNM_DynSizedText::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale)
 {
 	RECT r = m_position;
 	r.left += origin_x;
@@ -173,7 +173,7 @@ void SNM_DynSizedText::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y,
 		{
 			RECT tr = {r.left,r.top,r.right,r.top+laneHeight};
 			char buf[64] = "";
-			_snprintfSafe(buf, sizeof(buf), " %s ", m_title.Get()); // trick for better display when left/right align
+			snprintf(buf, sizeof(buf), " %s ", m_title.Get()); // trick for better display when left/right align
 			sFont.DrawText(drawbm, buf, -1, &tr, DT_SINGLELINE|DT_NOPREFIX|DT_VCENTER|m_titleAlign);
 		}
 
@@ -245,7 +245,7 @@ void SNM_DynSizedText::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y,
 		}
 #ifdef _SNM_DYN_FONT_DEBUG
 		char dbg[256];
-		_snprintfSafe(dbg, sizeof(dbg), "SNM_DynSizedText::OnPaint() - %d tries, estim: %d, real: %d\n", dbgTries, estimFontH, m_lastFontH);
+		snprintf(dbg, sizeof(dbg), "SNM_DynSizedText::OnPaint() - %d tries, estim: %d, real: %d\n", dbgTries, estimFontH, m_lastFontH);
 		OutputDebugString(dbg);
 #endif
 	}
@@ -408,7 +408,7 @@ void SNM_FiveMonitors::SetPosition(const RECT* _r)
 }
 
 // show/hide title lane for all monitors *together* (assumes mon3 and mon4 are smaller than mon1 and mon2)
-void SNM_FiveMonitors::OnPaint(LICE_IBitmap* _drawbm, int _origin_x, int _origin_y, RECT* _cliprect)
+void SNM_FiveMonitors::OnPaint(LICE_IBitmap* _drawbm, int _origin_x, int _origin_y, RECT* _cliprect, int rscale)
 {
 	if (m_nbRows>=2)
 	{
@@ -417,7 +417,7 @@ void SNM_FiveMonitors::OnPaint(LICE_IBitmap* _drawbm, int _origin_x, int _origin
 		((SNM_DynSizedText*)m_children->Get(1))->SetWantTitleLane(smallerHasLane);
 		((SNM_DynSizedText*)m_children->Get(2))->SetWantTitleLane(smallerHasLane);
 	}
-	WDL_VWnd::OnPaint(_drawbm, _origin_x, _origin_y, _cliprect);
+	WDL_VWnd::OnPaint(_drawbm, _origin_x, _origin_y, _cliprect, rscale);
 }
 
 void SNM_FiveMonitors::SetFontName(const char* _fontName) {
@@ -513,7 +513,7 @@ void SNM_ImageVWnd::SetImage(const char* _fn)
 }
 
 
-void SNM_ImageVWnd::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect) {
+void SNM_ImageVWnd::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale) {
 	if (m_img)
 	{
 		LICE_ScaledBlit(drawbm,m_img,
@@ -562,15 +562,15 @@ void OnPaintPlusOrMinus(RECT *_position, bool _en, bool _plus, LICE_IBitmap* _dr
 		LICE_Line(_drawbm,int(r.left+((r.right-r.left)/2)+0.5), r.top+delta,int(r.left+((r.right-r.left)/2)+0.5),r.bottom-(delta+1),col,alpha,0,false);
 }
 
-void SNM_TinyPlusButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect) {
+void SNM_TinyPlusButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale) {
 	OnPaintPlusOrMinus(&m_position, m_en, true, drawbm, origin_x, origin_y, cliprect);
 }
 
-void SNM_TinyMinusButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect) {
+void SNM_TinyMinusButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale) {
 	OnPaintPlusOrMinus(&m_position, m_en, false, drawbm, origin_x, origin_y, cliprect);
 }
 
-void SNM_TinyRightButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect)
+void SNM_TinyRightButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale)
 {
 	RECT r = m_position;
 	r.left += origin_x;
@@ -590,7 +590,7 @@ void SNM_TinyRightButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin
 
 }
 
-void SNM_TinyLeftButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect)
+void SNM_TinyLeftButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale)
 {
 	RECT r = m_position;
 	r.left += origin_x;
@@ -609,7 +609,7 @@ void SNM_TinyLeftButton::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_
 	LICE_Line(drawbm, r.right-1, r.bottom-1, r.right-1, r.top, col, alpha, 0, true);
 }
 
-void SNM_TinyTickBox::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect)
+void SNM_TinyTickBox::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale)
 {
 	RECT r = m_position;
 	r.left += origin_x;
@@ -691,16 +691,16 @@ void SNM_KnobCaption::DrawText(LICE_IBitmap* _drawbm, RECT* _rect, UINT _dtFlags
 	{
 		char buf[64] = "";
 		if (m_value || !m_zeroTxt.GetLength())
-			_snprintfSafe(buf, sizeof(buf), "%s\n%d %s", m_title.Get(), m_value, m_suffix.Get());
+			snprintf(buf, sizeof(buf), "%s\n%d %s", m_title.Get(), m_value, m_suffix.Get());
 		else
-			_snprintfSafe(buf, sizeof(buf), "%s\n%s", m_title.Get(), m_zeroTxt.Get());
+			snprintf(buf, sizeof(buf), "%s\n%s", m_title.Get(), m_zeroTxt.Get());
 		font->DrawText(_drawbm, buf, -1, _rect, _dtFlags);
 	}
 }
 
-void SNM_KnobCaption::OnPaint(LICE_IBitmap* drawbm, int origin_x, int origin_y, RECT* cliprect)
+void SNM_KnobCaption::OnPaint(LICE_IBitmap* drawbm, int origin_x, int origin_y, RECT* cliprect, int rscale)
 {
-	WDL_VWnd::OnPaint(drawbm, origin_x, origin_y, cliprect);
+	WDL_VWnd::OnPaint(drawbm, origin_x, origin_y, cliprect, rscale);
 
 	RECT r = m_position;
 	r.left += origin_x;

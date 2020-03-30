@@ -3,7 +3,7 @@
 /
 / Copyright (c) 2014-2015 Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -82,7 +82,7 @@ const int POSITION_H_RIGHT       = 0x800;
 const int POSITION_V_TOP         = 0x2000;
 const int POSITION_V_MIDDLE      = 0x4000;
 const int POSITION_V_BOTTOM      = 0x8000;
-const int SET_FOREGROUND         = 0x1000;
+// const int SET_FOREGROUND         = 0x1000; NF: not referenced currently
 
 /******************************************************************************
 * Globals                                                                     *
@@ -237,7 +237,7 @@ void BR_ContextualToolbar::LoadToolbar (bool exclusive)
 
 				// Set up toolbar window process for various options
 				int toggleAction;
-				this->GetReaperToolbar(this->GetToolbarId(mouseAction), NULL, &toggleAction, NULL, NULL);
+				this->GetReaperToolbar(this->GetToolbarId(mouseAction), NULL, &toggleAction, NULL, 0);
 				this->SetToolbarWndProc(executeOnToolbarLoad, toolbarHwnd, toggleAction, toolbarParent);
 
 				// Continue executing options
@@ -246,7 +246,7 @@ void BR_ContextualToolbar::LoadToolbar (bool exclusive)
 				bool undoTake  = this->ActivateTake(executeOnToolbarLoad);
 
 				// Create undo point
-				int undoMask; GetConfig("undomask", undoMask);
+				const int undoMask = ConfigVar<int>("undomask").value_or(0);
 				if (!GetBit(undoMask, 0)) // "Create undo points for item/track selection" is off
 				{
 					undoTrack = false;
@@ -598,7 +598,7 @@ void BR_ContextualToolbar::ImportConfig (const char* contextToolbars, const char
 				mouseAction = DO_NOTHING;
 
 			int toggleAction;
-			this->GetReaperToolbar(this->GetToolbarId(mouseAction), NULL, &toggleAction, NULL, NULL);
+			this->GetReaperToolbar(this->GetToolbarId(mouseAction), NULL, &toggleAction, NULL, 0);
 
 			this->SetMouseAction(context, mouseAction);
 			this->SetToggleAction(context, toggleAction);
@@ -937,7 +937,7 @@ int BR_ContextualToolbar::FindArrangeToolbar (BR_MouseInfo& mouseInfo, BR_Contex
 		}
 	}
 	// Envelope (take and track)
-	else if (!strcmp(mouseInfo.GetSegment(), "envelope") || (!strcmp(mouseInfo.GetSegment(), "track") && (!strcmp(mouseInfo.GetDetails(), "env_point")) || (!strcmp(mouseInfo.GetDetails(), "env_segment"))))
+	else if (!strcmp(mouseInfo.GetSegment(), "envelope") || ((!strcmp(mouseInfo.GetSegment(), "track") && (!strcmp(mouseInfo.GetDetails(), "env_point"))) || (!strcmp(mouseInfo.GetDetails(), "env_segment"))))
 	{
 		if (mouseInfo.IsTakeEnvelope())
 		{
@@ -1191,7 +1191,8 @@ bool BR_ContextualToolbar::SelectItem (BR_ContextualToolbar::ExecuteOnToolbarLoa
 	{
 		if (executeOnToolbarLoad.clearItemSelection)
 		{
-			for (int i = 0; i < CountMediaItems(NULL); ++i)
+			const int itemCount = CountMediaItems(NULL);
+			for (int i = 0; i < itemCount; ++i)
 			{
 				MediaItem* item = GetMediaItem(NULL, i);
 				if (item != executeOnToolbarLoad.itemToSelect && GetMediaItemInfo_Value(item, "B_UISEL"))
@@ -1505,9 +1506,9 @@ bool BR_ContextualToolbar::GetReaperToolbar (int id, int* mouseAction, int* togg
 		{
 			if (id >= 0 && id <= 2)
 			{
-				if      (id == 0) _snprintfSafe(toolbarName, toolbarNameSz, "%s", __LOCALIZE("Do nothing", "sws_DLG_181"));
-				else if (id == 1) _snprintfSafe(toolbarName, toolbarNameSz, "%s", __LOCALIZE("Inherit parent", "sws_DLG_181"));
-				else if (id == 2) _snprintfSafe(toolbarName, toolbarNameSz, "%s", __LOCALIZE("Follow item context", "sws_DLG_181"));
+				if      (id == 0) snprintf(toolbarName, toolbarNameSz, "%s", __LOCALIZE("Do nothing", "sws_DLG_181"));
+				else if (id == 1) snprintf(toolbarName, toolbarNameSz, "%s", __LOCALIZE("Inherit parent", "sws_DLG_181"));
+				else if (id == 2) snprintf(toolbarName, toolbarNameSz, "%s", __LOCALIZE("Follow item context", "sws_DLG_181"));
 			}
 			else
 			{
@@ -1646,6 +1647,9 @@ LRESULT CALLBACK BR_ContextualToolbar::ToolbarWndCallback (HWND hwnd, UINT uMsg,
 					Main_OnCommand(toolbarWndData->toggleAction, 0);
 
 					SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)wndProc);
+					// focus last focused window when toolbar is auto closed, p=2171694
+					if (toolbarWndData->lastFocusedHwnd)
+						::SetFocus(toolbarWndData->lastFocusedHwnd);
 					m_callbackToolbars.Delete(id, true);
 				}
 			}
@@ -1887,7 +1891,7 @@ void BR_ContextualToolbarsView::GetItemText (SWS_ListItem* item, int iCol, char*
 					else if (i == 1 && indentation == 2) indentationString.AppendFormatted(128, "%s%s%s", "  ", UTF8_CIRCLE, "  ");
 					else                                 indentationString.Append("    ");
 				}
-				_snprintfSafe(str, iStrMax, "%s%s", indentationString.Get(), description);
+				snprintf(str, iStrMax, "%s%s", indentationString.Get(), description);
 			}
 		}
 		break;
@@ -1911,16 +1915,16 @@ void BR_ContextualToolbarsView::GetItemText (SWS_ListItem* item, int iCol, char*
 						else if (iCol == COL_AUTOCLOSE)
 						{
 							if (contextualToolbar->GetToolbarType(toolbarId) == 3)
-								_snprintfSafe(str, iStrMax, "%s", autoClose ? UTF8_CHECKMARK : UTF8_MULTIPLICATION);
+								snprintf(str, iStrMax, "%s", autoClose ? UTF8_CHECKMARK : UTF8_MULTIPLICATION);
 							else
-								_snprintfSafe(str, iStrMax, "%s", "-");
+								snprintf(str, iStrMax, "%s", "-");
 						}
 						else if (iCol == COL_POSITION)
 						{
 							if (contextualToolbar->GetToolbarType(toolbarId) == 3 && (positionX != 0 || positionY != 0))
-								_snprintfSafe(str, iStrMax, "%s%d; %s%d", __LOCALIZE("X:","sws_DLG_181"), positionX, __LOCALIZE("Y:","sws_DLG_181"), positionY);
+								snprintf(str, iStrMax, "%s%d; %s%d", __LOCALIZE("X:","sws_DLG_181"), positionX, __LOCALIZE("Y:","sws_DLG_181"), positionY);
 							else
-								_snprintfSafe(str, iStrMax, "%s", "-");
+								snprintf(str, iStrMax, "%s", "-");
 						}
 					}
 				}
@@ -2185,8 +2189,8 @@ WDL_DLGRET BR_ContextualToolbarsWnd::PositionOffsetDialogProc (HWND hwnd, UINT u
 			#endif
 
 			char tmp[128];
-			_snprintfSafe(tmp, sizeof(tmp), "%d", s_positionOffset->first); SetDlgItemText(hwnd, IDC_EDIT1, tmp);
-			_snprintfSafe(tmp, sizeof(tmp), "%d", s_positionOffset->second); SetDlgItemText(hwnd, IDC_EDIT2, tmp);
+			snprintf(tmp, sizeof(tmp), "%d", s_positionOffset->first); SetDlgItemText(hwnd, IDC_EDIT1, tmp);
+			snprintf(tmp, sizeof(tmp), "%d", s_positionOffset->second); SetDlgItemText(hwnd, IDC_EDIT2, tmp);
 		}
 		break;
 
@@ -2559,7 +2563,7 @@ bool BR_ContextualToolbarsWnd::CloseOnCancel ()
 void BR_ContextualToolbarsWnd::OnDestroy ()
 {
 	char currentPresetStr[512];
-	_snprintfSafe(currentPresetStr, sizeof(currentPresetStr), "%d", m_currentPreset);
+	snprintf(currentPresetStr, sizeof(currentPresetStr), "%d", m_currentPreset);
 	WritePrivateProfileString(INI_SECTION, INI_KEY_CURRENT_PRESET, currentPresetStr, GetIniFileBR());
 }
 

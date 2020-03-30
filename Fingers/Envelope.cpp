@@ -36,7 +36,7 @@ RprEnvelopePoint::shape() const
 bool
 RprEnvelopePoint::selected() const
 {
-    return m_selected;
+    return !!m_selected;
 }
 
 double
@@ -78,9 +78,11 @@ RprEnvelopePoint::toString() const
 void
 RprEnvelopePoint::fromString(const char *stateData)
 {
+    int selflag=0;
     sscanf(stateData, "PT %lf %lf %d %d %d %d %lf", &m_time,
-        &m_parameterValue, &m_envelopeShape, &m_selUnknown,
-        &m_selected, &m_bezierUnknown, &m_bezierTension);
+        &m_parameterValue, (int*)&m_envelopeShape, &m_selUnknown,
+        &selflag, &m_bezierUnknown, &m_bezierTension);
+    m_selected = (selflag&1)==1;
 }
 
 RprEnvelope::RprEnvelope(TrackEnvelope* env) :
@@ -96,11 +98,10 @@ nParamIndex(0)
     RprStateChunk chunk(GetSetObjectState(m_env, ""));
     const char *pEnv = chunk.get();
 
-    int status;
     const char *envPtr = pEnv;
     char title[256];
 
-    status = sscanf(envPtr, "<%s %d %lf %lf %lf", &title, &nParamIndex, &dParamMin,
+    sscanf(envPtr, "<%s %d %lf %lf %lf", (char*)&title, &nParamIndex, &dParamMin,
         &dParamMax, &dNeutralVal);
 
     m_szTitle = title;
@@ -117,7 +118,7 @@ nParamIndex(0)
         dParamMin = -1.0;
     }
     
-	if (m_szTitle.find("PLAYSPEEDENV") != std::string::npos)
+    if (m_szTitle.find("PLAYSPEEDENV") != std::string::npos)
     {
         dParamMax = 4.0;
         dParamMin = 0.1;
@@ -135,7 +136,7 @@ nParamIndex(0)
         return;
     }
 
-    status = sscanf(envPtr, "ACT %d", &nActive);
+    sscanf(envPtr, "ACT %d", &nActive);
 
     envPtr = strchr(envPtr, '\n') + 1;
 
@@ -144,7 +145,7 @@ nParamIndex(0)
         return;
     }
 
-    status = sscanf(envPtr, "VIS %d %d %lf", &nVisible, &nAutomationInLane, &dVISUnknown);
+    sscanf(envPtr, "VIS %d %d %lf", &nVisible, &nAutomationInLane, &dVISUnknown);
 
     envPtr = strchr(envPtr, '\n') + 1;
     if (envPtr[0] == '\0')
@@ -152,7 +153,7 @@ nParamIndex(0)
         return;
     }
 
-    status = sscanf(envPtr, "LANEHEIGHT %d %d", &nLaneHeight, &nLHUnknown);
+    sscanf(envPtr, "LANEHEIGHT %d %d", &nLaneHeight, &nLHUnknown);
 
     envPtr = strchr(envPtr, '\n') + 1;
     if(envPtr[0] == '\0')
@@ -160,7 +161,7 @@ nParamIndex(0)
         return;
     }
 
-    status = sscanf(envPtr, "ARM %d", &nArm);
+    sscanf(envPtr, "ARM %d", &nArm);
 
     envPtr = strchr(envPtr, '\n') + 1;
     if(envPtr[0] == '\0')
@@ -168,7 +169,7 @@ nParamIndex(0)
         return;
     }
 
-    status = sscanf(envPtr, "DEFSHAPE %d", &nDefaultShape);
+    sscanf(envPtr, "DEFSHAPE %d", &nDefaultShape);
 
     envPtr = strchr(envPtr, '\n') + 1;
 

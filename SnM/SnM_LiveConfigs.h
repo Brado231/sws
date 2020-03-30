@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_LiveConfigs.h
 /
-/ Copyright (c) 2010-2013 Jeffos
+/ Copyright (c) 2010 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -65,7 +65,7 @@ public:
 	~LiveConfig() { m_ccConfs.Empty(true); delete m_osc; }
 
 	bool IsDefault(bool _ignoreComment);
-	bool IsLastConfiguredTrack(MediaTrack* _tr);
+	int CountTrackConfigs(MediaTrack* _tr);
 
 	// GUID_NULL means "no track" here not "the master track", see GuidToTrack()
 	MediaTrack* GetInputTrack() { return !GuidsEqual(&m_inputTr, &GUID_NULL) ? GuidToTrack(&m_inputTr) : NULL; }
@@ -73,13 +73,38 @@ public:
 	GUID* GetInputTrackGUID() { return &m_inputTr; }
 	void SetInputTrackGUID(GUID* _g) { memcpy(&m_inputTr, _g, sizeof(GUID)); }
 
+	void cfg_InitWorkingVars()
+	{
+		m_cfg_done=false;
+		m_cfg_last_mute_time=0.0;
+		m_cfg_tracks.Empty();
+		m_cfg_tracks_states.Empty();
+	}  
+	void cfg_SaveMuteStateAndMuteIfNeeded(MediaTrack* _tr, bool _force = false);
+	void cfg_Mute(MediaTrack* _tr);
+	void cfg_WaitForMuteSendCC123(MediaTrack* inputTr);
+	void cfg_RestoreMuteStates(MediaTrack* activeTr, MediaTrack* inputTr);
+
 	WDL_PtrList<LiveConfigItem> m_ccConfs;
-	int m_version, m_ccDelay, m_fade, m_enable, m_muteOthers, m_selScroll, m_offlineOthers, m_cc123, m_ignoreEmpty, m_autoSends;
+	int m_options; // &1=mute all but active track
+	               // &2=offline all but active track
+	               // &4=disarm all but active track
+	               // &8=send all-notes-off on config switch
+	               // &16=ignore switches to empty configs
+	               // &32=auto update sends
+	               // &64=scroll to track on list view click
+	int m_ccDelay, m_fade, m_enable;
 	int m_activeMidiVal, m_curMidiVal, m_preloadMidiVal, m_curPreloadMidiVal;
 	SNM_OscCSurf* m_osc;
 
 private:
 	GUID m_inputTr; // GUID rather than MediaTrack* (to handle undo of track deletion, etc)
+
+  // working vars: set while appying/preloading configs
+  WDL_PtrList<void> m_cfg_tracks; // same nb of items as m_cfg_tracks_states
+  WDL_PtrList<bool> m_cfg_tracks_states; // can contain NULL items (mute state unchanged), same nb of items as m_cfg_tracks
+  double m_cfg_last_mute_time;
+  bool m_cfg_done;
 };
 
 
@@ -190,15 +215,6 @@ protected:
 	void Perform();
 };
 
-class LiveConfigsUpdateFadeJob : public ScheduledJob {
-public:
-	LiveConfigsUpdateFadeJob(int _value) 
-		: ScheduledJob(SNM_SCHEDJOB_LIVECFG_FADE_UPDATE, SNM_SCHEDJOB_DEFAULT_DELAY), m_value(_value) {}
-protected:
-	void Perform();
-	int m_value;
-};
-
 
 void LiveConfigsSetTrackTitle();
 void LiveConfigsTrackListChange();
@@ -215,8 +231,8 @@ void OpenLiveConfigMonitorWnd(int _idx);
 void OpenLiveConfigMonitorWnd(COMMAND_T*);
 int IsLiveConfigMonitorWndDisplayed(COMMAND_T*);
 
-void ApplyLiveConfig(MIDI_COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd);
-void PreloadLiveConfig(MIDI_COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd);
+void ApplyLiveConfig(COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd);
+void PreloadLiveConfig(COMMAND_T* _ct, int _val, int _valhw, int _relmode, HWND _hwnd);
 
 void SwapCurrentPreloadLiveConfigs(COMMAND_T*);
 
@@ -241,6 +257,11 @@ int IsOfflineOthersLiveConfigEnabled(COMMAND_T*);
 void EnableOfflineOthersLiveConfig(COMMAND_T*);
 void DisableOfflineOthersLiveConfig(COMMAND_T*);
 void ToggleOfflineOthersLiveConfig(COMMAND_T*);
+
+int IsDisarmOthersLiveConfigEnabled(COMMAND_T*);
+void EnableDisarmOthersLiveConfig(COMMAND_T*);
+void DisableDisarmOthersLiveConfig(COMMAND_T*);
+void ToggleDisarmOthersLiveConfig(COMMAND_T*);
 
 int IsAllNotesOffLiveConfigEnabled(COMMAND_T*);
 void EnableAllNotesOffLiveConfig(COMMAND_T*);

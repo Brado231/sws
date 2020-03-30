@@ -1,7 +1,7 @@
 /******************************************************************************
 / Zoom.cpp
 /
-/ Copyright (c) 2009 Tim Payne (SWS)
+/ Copyright (c) 2009 and later Tim Payne (SWS)
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -48,8 +48,24 @@ void SetReaperWndSize(COMMAND_T* = NULL)
 	SetWindowPos(hwnd, NULL, 0, 0, x, y, SWP_NOMOVE | SWP_NOZORDER);
 }
 
-void SetHorizPos(HWND hwnd, double dPos, double dOffset = 0.0)
+// hwnd: optional, dRoom and dOffset: normalized values (%)
+void SetHorizPos(HWND hwnd, double dPos, double dRoom = 0.0, double dOffset = 0.0)
 {
+	double start = 2.0, end = 1.0; // start>end to detect mordern versions of GetSet_ArrangeView2()
+	GetSet_ArrangeView2(NULL, false, 0, 0, &start, &end); // full arrange view's start/end time -- v5.12pre4+ only
+	if (start < end)
+	{
+		double start_timeOut = dPos - (end-start) * dOffset;
+		double end_timeOut = dPos + (end-start) * (1.0-dOffset);
+		start_timeOut -= (end_timeOut-start_timeOut) * dRoom;
+		end_timeOut += (end_timeOut-start_timeOut) * dRoom;
+		GetSet_ArrangeView2(NULL, true, 0, 0, &start_timeOut, &end_timeOut); // includes UI refresh
+		return;
+	}
+
+	// legacy code, if REAPER < v5.12pre4
+	if (!hwnd) hwnd=GetTrackWnd();
+
 	SCROLLINFO si = { sizeof(SCROLLINFO), };
 	si.fMask = SIF_ALL;
 	CoolSB_GetScrollInfo(hwnd, SB_HORZ, &si);
@@ -57,7 +73,7 @@ void SetHorizPos(HWND hwnd, double dPos, double dOffset = 0.0)
 	if (dOffset)
 		si.nPos -= (int)(dOffset * si.nPage);
 	CoolSB_SetScrollInfo(hwnd, SB_HORZ, &si, true);
-	SendMessage(hwnd, WM_HSCROLL, SB_THUMBPOSITION, NULL);
+	SendMessage(hwnd, WM_HSCROLL, SB_THUMBPOSITION, 0);
 	UpdateTimeline();
 }
 
@@ -92,7 +108,7 @@ void SetVertPos(HWND hwnd, int iTrack, bool bPixels, int iExtra = 0) // 1 based 
 		si.nMax = si.nPage;
 
 	CoolSB_SetScrollInfo(hwnd, SB_VERT, &si, true);
-	SendMessage(hwnd, WM_VSCROLL, si.nPos << 16 | SB_THUMBPOSITION, NULL);
+	SendMessage(hwnd, WM_VSCROLL, si.nPos << 16 | SB_THUMBPOSITION, 0);
 }
 
 void VertZoomRange(int iFirst, int iNum, bool* bZoomed, bool bMinimizeOthers, bool includeEnvelopes)
@@ -110,7 +126,7 @@ void VertZoomRange(int iFirst, int iNum, bool* bZoomed, bool bMinimizeOthers, bo
 
 	if (bMinimizeOthers)
 	{
-		*(int*)GetConfigVar("vzoom2") = 0;
+		*ConfigVar<int>("vzoom2") = 0;
 		for (int i = 0; i <= GetNumTracks(); i++)
 			GetSetMediaTrackInfo(CSurf_TrackFromID(i, false), "I_HEIGHTOVERRIDE", &g_i0);
 		Main_OnCommand(40112, 0); // Zoom out vert to minimize envelope lanes too (since vZoom is now 0) (calls refresh)
@@ -245,7 +261,7 @@ void VertZoomRange(int iFirst, int iNum, bool* bZoomed, bool bMinimizeOthers, bo
 		// Reset custom track sizes
 		for (int i = 0; i <= GetNumTracks(); i++)
 			GetSetMediaTrackInfo(CSurf_TrackFromID(i, false), "I_HEIGHTOVERRIDE", &g_i0);
-		*(int*)GetConfigVar("vzoom2") = iZoom;
+		*ConfigVar<int>("vzoom2") = iZoom;
 		TrackList_AdjustWindows(false);
 		UpdateTimeline();
 	}
@@ -385,10 +401,10 @@ void HorizZoomSelItems(bool bTimeSel = false)
 	SaveZoomSlice(true);
 }
 
-// Ct->user is the screen position in %, negative for play cursor (Vs edit cursor)
+// ct->user is the screen position in %, negative for play cursor (vs edit cursor)
 void ScrollToCursor(COMMAND_T* ct)
 {
-	SetHorizPos(GetTrackWnd(), ct->user > 0 ? GetCursorPosition() : GetPlayPosition(), 0.01 * abs((int)ct->user));
+	SetHorizPos(NULL, ct->user<0 && (GetPlayState()&1) ? GetPlayPosition() : GetCursorPosition(), 0.0, 0.01 * abs((int)ct->user));
 }
 
 void HorizScroll(COMMAND_T* ctx)
@@ -401,7 +417,7 @@ void HorizScroll(COMMAND_T* ctx)
 	if (si.nPos < 0) si.nPos = 0;
 	else if (si.nPos > si.nMax) si.nPos = si.nMax;
 	CoolSB_SetScrollInfo(hwnd, SB_HORZ, &si, true);
-	SendMessage(hwnd, WM_HSCROLL, SB_THUMBPOSITION, NULL);
+	SendMessage(hwnd, WM_HSCROLL, SB_THUMBPOSITION, 0);
 }
 
 void ZoomToSelItems(COMMAND_T* ct)			{ VertZoomSelItems(0, ct ? (int)ct->user == 0 : false); HorizZoomSelItems(); }
@@ -460,7 +476,7 @@ public:
 		// Vert
 		if (m_bVert)
 		{
-			iVZoom = *(int*)GetConfigVar("vzoom2");
+			iVZoom = *ConfigVar<int>("vzoom2");
 			hbTrackHeights.Resize(GetNumTracks()+1, false);
 			hbTrackVis.Resize(GetNumTracks()+1, false);
 			hbEnvHeights.Resize(0, false);
@@ -505,7 +521,7 @@ public:
 		// Vert zoom
 		if (m_bVert)
 		{
-			*(int*)GetConfigVar("vzoom2") = iVZoom;
+			*ConfigVar<int>("vzoom2") = iVZoom;
 			int iSaved = hbTrackHeights.GetSize();
 			int iEnvPtr = 0;
 			for (int i = 0; i <= GetNumTracks(); i++)
@@ -565,7 +581,7 @@ void TogZoom(int iType, int iOthers, bool includeEnvelopes)
 
 	double d1, d2;
 	GetSet_LoopTimeRange(false, false, &d1, &d2, false);
-	int itemCount = CountSelectedMediaItems(NULL);
+	const int itemCount = CountSelectedMediaItems(NULL);
 
 	if (((iType == 1 || iType == 3) && itemCount == 0 && d1 == d2) ||
 		((iType == 2 || iType == 4) && itemCount == 0)             ||
@@ -729,7 +745,7 @@ public:
 			pHeights[i] = *(int*)GetSetMediaTrackInfo(CSurf_TrackFromID(i, false), "I_HEIGHTOVERRIDE", NULL);
 
 		m_dHZoom = GetHZoomLevel();
-		m_iVZoom = *(int*)GetConfigVar("vzoom2");
+		m_iVZoom = *ConfigVar<int>("vzoom2");
 		m_bProjExtents = false;
 	}
 	void ZoomToProject()
@@ -765,7 +781,7 @@ public:
 			return;
 
 		adjustZoom(m_dHZoom, 1, false, -1);
-		*(int*)GetConfigVar("vzoom2") = m_iVZoom;
+		*ConfigVar<int>("vzoom2") = m_iVZoom;
 
 		// Restore track heights, ignoring the fact that tracks could have been added/removed
 		for (int i = 0; i < m_iTrackHeights.GetSize() && i <= GetNumTracks(); i++)
@@ -801,7 +817,7 @@ public:
 	//}
 };
 
-static SWSProjConfig<WDL_PtrList_DeleteOnDestroy<ZoomState> > g_zoomStack;
+static SWSProjConfig<WDL_PtrList_DOD<ZoomState> > g_zoomStack;
 static SWSProjConfig<int> g_zoomLevel;
 
 // Undo zoom prefs
@@ -1151,7 +1167,7 @@ LRESULT CALLBACK ZoomWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				BitBlt(dc, 0, 0, bm.getWidth(), bm.getHeight(), bm.getDC(), 0, 0, SRCCOPY);
 
 				// Now that we're done drawing, adjust rZoom to 0 height if necessary
-				// This is to avoid unintentional vert zoom per mbn http://github.com/Jeff0S/sws/issues/178#c14
+				// This is to avoid unintentional vert zoom per mbn http://github.com/reaper-oss/sws/issues/178#c14
 				if (rMini.top == rBox.top && rMini.bottom == rBox.bottom)
 					rZoom.top = rZoom.bottom;
 			}
@@ -1320,7 +1336,7 @@ LRESULT CALLBACK DragZoomWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 					double dNewPos = dOrigPos - (ptClient.x / GetHZoomLevel());
 					if (dNewPos != dPrevPos)
 					{
-						SetHorizPos(GetTrackWnd(), dNewPos);
+						SetHorizPos(NULL, dNewPos);
 						dPrevPos = dNewPos;
 					}
 
@@ -1404,7 +1420,7 @@ static INT_PTR WINAPI ZoomPrefsProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 			CheckDlgButton(hwndDlg, IDC_SETTIMESEL, g_bSetTimesel);
 			CheckDlgButton(hwndDlg, IDC_DRAGUPPER, g_bDragZoomUpper);
 			CheckDlgButton(hwndDlg, IDC_DRAGLOWER, g_bDragZoomLower);
-			char str[32];
+			char str[314];
 			sprintf(str, "%.2f", g_dDragZoomScale);
 			SetWindowText(GetDlgItem(hwndDlg, IDC_DRAGSCALE), str);
 			EnableWindow(GetDlgItem(hwndDlg, IDC_DRAGSCALE), g_bDragZoomUpper || g_bDragZoomLower);
@@ -1654,7 +1670,7 @@ void ZoomExit()
 	plugin_register("-projectconfig",&g_projectconfig);
 
 	// Write the zoom prefs
-	char str[32];
+	char str[314];
 	sprintf(str, "%d", (g_bMidMouseButton ? 1 : 0) + (g_bItemZoom ? 2 : 0) + (g_bUndoZoom ? 4 : 0) +
 		(g_bUnzoomMode ? 8 : 0) + (g_bUndoSWSOnly ? 16 : 0) + (g_bLastUndoProj ? 32 : 0) +
 		(g_bDragUpUndo ? 64 : 0) + (g_iMidMouseModifier << 8) + (g_bSetCursor ? 2048 : 0) +

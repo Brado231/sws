@@ -64,7 +64,7 @@ void SplitFileNameComponents(string FullFileName,vector<string>& FNComponents)
 void DoOpenTemplate(int iNum, bool bProject)
 {
 	char cPath[BUFFER_SIZE];
-	_snprintf(cPath, BUFFER_SIZE, "%s%c%s", GetResourcePath(), PATH_SLASH_CHAR, bProject ? "ProjectTemplates" : "TrackTemplates");
+	snprintf(cPath, BUFFER_SIZE, "%s%c%s", GetResourcePath(), PATH_SLASH_CHAR, bProject ? "ProjectTemplates" : "TrackTemplates");
 	vector<string> templates;
 	SearchDirectory(templates, cPath, bProject ? "RPP" : "RTRACKTEMPLATE", true);
 	if (templates.size() == 0)
@@ -72,11 +72,15 @@ void DoOpenTemplate(int iNum, bool bProject)
 		MessageBox(g_hwndParent, __LOCALIZE("No templates at all were found!","sws_mbox"),__LOCALIZE("Xenakios - Error","sws_mbox"), MB_OK);
 		return;
 	}
+	double runningReaVersion = atof(GetAppVersion());
 	for (int i = 0; i < (int)templates.size(); i++)
 	{
 		const char* pFilename = strrchr(templates[i].c_str(), PATH_SLASH_CHAR);
 		if (pFilename && pFilename[1] && iNum == atol(pFilename+1))
 		{
+			//  Main_openProject() supports noprompt: and template: prefixes since R5.983
+			if (bProject && (runningReaVersion >= 5.983))
+				templates[i].insert(0, "template:");
 			Main_openProject((char*)templates[i].c_str());
 			return;
 		}

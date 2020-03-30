@@ -1,9 +1,9 @@
 /******************************************************************************
 / BR_Update.cpp
 /
-/ Copyright (c) 2013 Dominik Martin Drzic
+/ Copyright (c) 2013 and later Dominik Martin Drzic
 / http://forum.cockos.com/member.php?u=27094
-/ http://github.com/Jeff0S/sws
+/ http://github.com/reaper-oss/sws
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
 / of this software and associated documentation files (the "Software"), to deal
@@ -25,15 +25,17 @@
 / OTHER DEALINGS IN THE SOFTWARE.
 /
 ******************************************************************************/
+
 #include "stdafx.h"
 #include "BR_Update.h"
 #include "BR_Util.h"
-#include "../version.h"
+#include "../url.h"
+#include "version.h"
 #include "../SnM/SnM_Dlg.h"
 #include "../SnM/SnM_Util.h"
 #include "../reaper/localize.h"
-#include "../../WDL/jnetlib/jnetlib.h"
-#include "../../WDL/jnetlib/httpget.h"
+#include "WDL/jnetlib/jnetlib.h"
+#include "WDL/jnetlib/httpget.h"
 
 /******************************************************************************
 * Constants                                                                   *
@@ -60,7 +62,7 @@ static void SetVersionMessage (HWND hwnd, BR_SearchObject* searchObject)
 {
 	BR_Version versionO, versionB;
 	int status = searchObject->GetStatus(&versionO, &versionB);
-	char tmp[256] = {0};
+	char msg[256]{};
 
 	if (status == SEARCH_INITIATED)
 	{
@@ -74,7 +76,7 @@ static void SetVersionMessage (HWND hwnd, BR_SearchObject* searchObject)
 	}
 	else if (status == NO_CONNECTION)
 	{
-		_snprintfSafe(tmp, sizeof(tmp), __LOCALIZE("Connection could not be established","sws_DLG_172"));
+		snprintf(msg, sizeof(msg), "%s", __LOCALIZE("Connection could not be established","sws_DLG_172"));
 		SetWindowText(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), __LOCALIZE("Retry","sws_DLG_172"));
 		EnableWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), true);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), SW_SHOW);
@@ -84,7 +86,7 @@ static void SetVersionMessage (HWND hwnd, BR_SearchObject* searchObject)
 	}
 	else if (status == UP_TO_DATE)
 	{
-		_snprintfSafe(tmp, sizeof(tmp), __LOCALIZE("SWS extension is up to date.","sws_DLG_172"));
+		snprintf(msg, sizeof(msg), "%s", __LOCALIZE("SWS extension is up to date.","sws_DLG_172"));
 		EnableWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), false);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), SW_SHOW);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_OFF), SW_HIDE);
@@ -93,7 +95,7 @@ static void SetVersionMessage (HWND hwnd, BR_SearchObject* searchObject)
 	}
 	else if (status == OFFICIAL_AVAILABLE)
 	{
-		_snprintfSafe(tmp, sizeof(tmp), __LOCALIZE("Official update is available: Version %d.%d.%d Build #%d","sws_DLG_172"), versionO.maj, versionO.min, versionO.rev, versionO.build);
+		snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Official update is available: Version %d.%d.%d Build #%d","sws_DLG_172"), versionO.maj, versionO.min, versionO.rev, versionO.build);
 		EnableWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), true);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), SW_SHOW);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_OFF), SW_HIDE);
@@ -102,7 +104,7 @@ static void SetVersionMessage (HWND hwnd, BR_SearchObject* searchObject)
 	}
 	else if (status == BETA_AVAILABLE)
 	{
-		_snprintfSafe(tmp, sizeof(tmp), __LOCALIZE("Beta update is available: Version %d.%d.%d Build #%d","sws_DLG_172"), versionB.maj, versionB.min, versionB.rev, versionB.build);
+		snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Beta update is available: Version %d.%d.%d Build #%d","sws_DLG_172"), versionB.maj, versionB.min, versionB.rev, versionB.build);
 		EnableWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), true);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), SW_SHOW);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_OFF), SW_HIDE);
@@ -111,14 +113,14 @@ static void SetVersionMessage (HWND hwnd, BR_SearchObject* searchObject)
 	}
 	else if (status == BOTH_AVAILABLE)
 	{
-		_snprintfSafe(tmp, sizeof(tmp), __LOCALIZE("Official update is available: Version %d.%d.%d Build #%d\nBeta update is available: Version %d.%d.%d Build #%d","sws_DLG_172"), versionO.maj, versionO.min, versionO.rev, versionO.build, versionB.maj, versionB.min, versionB.rev, versionB.build);
+		snprintf(msg, sizeof(msg), __LOCALIZE_VERFMT("Official update is available: Version %d.%d.%d Build #%d\nBeta update is available: Version %d.%d.%d Build #%d","sws_DLG_172"), versionO.maj, versionO.min, versionO.rev, versionO.build, versionB.maj, versionB.min, versionB.rev, versionB.build);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_OFF), SW_SHOW);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_BETA), SW_SHOW);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_DOWNLOAD), SW_HIDE);
 		ShowWindow(GetDlgItem(hwnd, IDC_BR_VER_PROGRESS), SW_HIDE);
 	}
 
-	SetWindowText(GetDlgItem(hwnd, IDC_BR_VER_MESSAGE), tmp);
+	SetWindowText(GetDlgItem(hwnd, IDC_BR_VER_MESSAGE), msg);
 }
 
 static WDL_DLGRET DialogProc (HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -321,7 +323,7 @@ void SetStartupSearchOptions (bool official, bool beta, unsigned int lastTime)
 		lp.parse(tmp);
 		lastTime = lp.gettoken_uint(2);
 	}
-	_snprintfSafe(tmp, sizeof(tmp), "%d %d %u", !!official, !!beta, lastTime);
+	snprintf(tmp, sizeof(tmp), "%d %d %u", !!official, !!beta, lastTime);
 	WritePrivateProfileString("SWS", STARTUP_VERSION_KEY, tmp, get_ini_file());
 }
 

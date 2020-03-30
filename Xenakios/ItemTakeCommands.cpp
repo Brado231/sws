@@ -30,6 +30,7 @@
 #include "../reaper/localize.h"
 #include "Parameters.h"
 #include "../Breeder/BR_Util.h"
+#include "../SnM/SnM_Util.h"
 
 using namespace std;
 
@@ -114,7 +115,7 @@ void DoToggleTakesNormalize(COMMAND_T* ct)
 	{
 		if (TheTakes->Get(i))
 		{
-			double TakeVol=*(double*)GetSetMediaItemTakeInfo(TheTakes->Get(i),"D_VOL",NULL);
+			double TakeVol=abs(*(double*)GetSetMediaItemTakeInfo(TheTakes->Get(i),"D_VOL",NULL));
 			if (TakeVol!=1.0) NumNormalizedTakes++;
 		}
 	}
@@ -122,10 +123,10 @@ void DoToggleTakesNormalize(COMMAND_T* ct)
 	{
 		for (int i=0;i<NumActiveTakes;i++)
 		{
-			if (TheTakes->Get(i))
+			if (MediaItem_Take* take = TheTakes->Get(i))
 			{
-				double TheGain=1.0;
-				GetSetMediaItemTakeInfo(TheTakes->Get(i),"D_VOL",&TheGain);
+				double TheGain = IsTakePolarityFlipped(take) ? -1.0 : 1.0;
+				GetSetMediaItemTakeInfo(take,"D_VOL",&TheGain);
 			}
 		}
 		Undo_OnStateChangeEx(SWS_CMD_SHORTNAME(ct),UNDO_STATE_ITEMS,-1);
@@ -150,7 +151,13 @@ void DoSetVolPan(double Vol, double Pan, bool SetVol, bool SetPan)
 	double NewPan=Pan;
 	for (int i=0;i<(int)TheTakes.size();i++)
 	{
-		if (SetVol) GetSetMediaItemTakeInfo(TheTakes[i],"D_VOL",&NewVol);
+		if (SetVol)
+		{
+			MediaItem_Take* take = TheTakes[i];
+			if (IsTakePolarityFlipped(take))
+				NewVol = -NewVol;
+			GetSetMediaItemTakeInfo(take, "D_VOL", &NewVol);
+		}
 		if (SetPan) GetSetMediaItemTakeInfo(TheTakes[i],"D_PAN",&NewPan);
 
 	}
@@ -280,7 +287,7 @@ void PasteMultipletimes(int NumPastes, double TimeIntervalQN, int RepeatMode)
 {
 	if (NumPastes > 0)
 	{
-		int* pCursorMode = (int*)GetConfigVar("itemclickmovecurs");
+		const ConfigVar<int> pCursorMode("itemclickmovecurs");
 		double dStartTime = GetCursorPosition();
 
 		Undo_BeginBlock();
@@ -291,11 +298,9 @@ void PasteMultipletimes(int NumPastes, double TimeIntervalQN, int RepeatMode)
 			{
 				// Cursor mode must set to move the cursor after paste
 				// Clear bit 8 of itemclickmovecurs
-				int savedMode = *pCursorMode;
-				*pCursorMode &= ~8;
+				ConfigVarOverride<int> tmpCursorMode(pCursorMode, *pCursorMode & ~8);
 				for (int i = 0; i < NumPastes; i++)
 					Main_OnCommand(40058,0); // Paste
-				*pCursorMode = savedMode; // Restore the cursor mode
 				break;
 			}
 			case 1: // Time interval
@@ -340,7 +345,7 @@ WDL_DLGRET RepeatPasteDialogProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM 
     {
 		case WM_INITDIALOG:
 		{
-			char TextBuf[32];
+			char TextBuf[314];
 			sprintf(TextBuf,"%.2f", dTimeInterval);
 			SetDlgItemText(hwnd, IDC_EDIT1, TextBuf);
 
@@ -689,7 +694,8 @@ bool GenerateShuffledTakeRandomTable(int *IntTable,int numItems,int badFirstNumb
 
 void DoShuffleSelectTakesInItems(COMMAND_T* ct)
 {
-	for (int i = 0; i < CountSelectedMediaItems (NULL); ++i)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; ++i)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		int takeCount = CountTakes(item);
@@ -720,14 +726,15 @@ void DoShuffleSelectTakesInItems(COMMAND_T* ct)
 void DoMoveItemsToEditCursor(COMMAND_T* ct)
 {
 	double EditCurPos=GetCursorPosition();
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* CurItem = GetSelectedMediaItem(0, i);
 		double SnapOffset = *(double*)GetSetMediaItemInfo(CurItem, "D_SNAPOFFSET", NULL);
 		double NewPos = EditCurPos - SnapOffset;
 		GetSetMediaItemInfo(CurItem, "D_POSITION", &NewPos);
 	}
-	if (CountSelectedMediaItems(0))
+	if (cnt)
 	{
 		Undo_OnStateChangeEx(SWS_CMD_SHORTNAME(ct), UNDO_STATE_ITEMS, -1);
 		UpdateTimeline();
@@ -737,7 +744,8 @@ void DoMoveItemsToEditCursor(COMMAND_T* ct)
 void DoRemoveItemFades(COMMAND_T* ct)
 {
 	double dFade = 0.0;
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(0, i);
 		GetSetMediaItemInfo(item, "D_FADEINLEN",  &dFade);
@@ -754,7 +762,8 @@ void DoTrimLeftEdgeToEditCursor(COMMAND_T* ct)
 {
 	double NewLeftEdge = GetCursorPosition();
 	bool modified = false;
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* CurItem = GetSelectedMediaItem(0, i);
 		double OldLeftEdge = *(double*)GetSetMediaItemInfo(CurItem, "D_POSITION", NULL);
@@ -796,7 +805,8 @@ void DoTrimRightEdgeToEditCursor(COMMAND_T* ct)
 {
 	double dRightEdge = GetCursorPosition();
 	bool modified = false;
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		modified = true;
 		MediaItem* CurItem = GetSelectedMediaItem(0, i);
@@ -824,7 +834,8 @@ void DoApplyTrackFXStereoAndResetVol(COMMAND_T* ct)
 	Undo_BeginBlock();
 	Main_OnCommand(40209,0); // apply track fx in stereo to items
 	double dVol = 1.0;
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 		GetSetMediaItemInfo(GetSelectedMediaItem(0, i), "D_VOL", &dVol);
 	Undo_EndBlock(SWS_CMD_SHORTNAME(ct), UNDO_STATE_ITEMS);
 }
@@ -834,7 +845,8 @@ void DoApplyTrackFXMonoAndResetVol(COMMAND_T* ct)
 	Undo_BeginBlock();
 	Main_OnCommand(40361,0); // apply track fx in mono to items
 	double dVol = 1.0;
-	for (int i = 0; i < CountSelectedMediaItems(0); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 		GetSetMediaItemInfo(GetSelectedMediaItem(0, i), "D_VOL", &dVol);
 	Undo_EndBlock(SWS_CMD_SHORTNAME(ct), UNDO_STATE_ITEMS);
 }
@@ -929,43 +941,26 @@ double g_lastTailLen;
 void DoWorkForRenderItemsWithTail(double TailLen)
 {
 	// Unselect all tracks
-
-	MediaTrack* MunRaita;
-	MediaItem* CurItem;
-
-	int numItems;;
-
-	char textbuf[100];
-	int sz=0; int *fxtail = (int *)get_config_var("itemfxtail",&sz);
-    int OldTail=*fxtail;
-	if (sz==sizeof(int) && fxtail)
-	{
-
-		int msTail=int(1000*TailLen);
-		*fxtail=msTail;
-		sprintf(textbuf,"%d",msTail);
-	}
+	const int msTail = static_cast<int>(1000 * TailLen);
+	ConfigVarOverride<int> fxtail("itemfxtail", msTail);
 
 	bool ItemSelected=false;
-	int i;
-	int j;
-	for (i=0;i<GetNumTracks();i++)
+	for (int i=0;i<GetNumTracks();i++)
 	{
-		MunRaita = CSurf_TrackFromID(i+1,FALSE);
-		numItems=GetTrackNumMediaItems(MunRaita);
+		MediaTrack *MunRaita = CSurf_TrackFromID(i+1,false);
+		const int numItems=GetTrackNumMediaItems(MunRaita);
 		Main_OnCommand(40635,0);
-		for (j=0;j<numItems;j++)
+		for (int j=0;j<numItems;j++)
 		{
-			CurItem = GetTrackMediaItem(MunRaita,j);
+			MediaItem *CurItem = GetTrackMediaItem(MunRaita,j);
 			//propertyName="D_";
 			ItemSelected=*(bool*)GetSetMediaItemInfo(CurItem,"B_UISEL",NULL);
-			if (ItemSelected==TRUE)
+			if (ItemSelected)
 			{
 				Main_OnCommand(40601,0); // render items as new take
 			}
 		}
 	}
-	*fxtail=OldTail;
 	UpdateTimeline();
 }
 
@@ -978,7 +973,7 @@ WDL_DLGRET RenderItemsWithTailDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LP
     {
         case WM_INITDIALOG:
 		{
-			char TextBuf[32];
+			char TextBuf[314];
 
 			sprintf(TextBuf,"%.2f",g_lastTailLen);
 			SetDlgItemText(hwnd, IDC_EDIT1, TextBuf);
@@ -992,7 +987,7 @@ WDL_DLGRET RenderItemsWithTailDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LP
                 case IDOK:
 				{
 					char textbuf[100];
-					GetDlgItemText(hwnd,IDC_EDIT1,textbuf,100);
+					GetDlgItemText(hwnd,IDC_EDIT1,textbuf,sizeof(textbuf));
 					g_lastTailLen=atof(textbuf);
 					DoWorkForRenderItemsWithTail(g_lastTailLen);
 					EndDialog(hwnd,0);
@@ -1025,7 +1020,7 @@ void DoOpenAssociatedRPP(COMMAND_T*)
 		if (ThePCMSource && ThePCMSource->GetFileName())
 		{
 			char RPPFileNameBuf[1024];
-			sprintf(RPPFileNameBuf,"%s\\reaper.exe \"%s.RPP\"",GetExePath(), ThePCMSource->GetFileName());
+			snprintf(RPPFileNameBuf,sizeof(RPPFileNameBuf),"%s\\reaper.exe \"%s.RPP\"",GetExePath(), ThePCMSource->GetFileName());
 			if (!DoLaunchExternalTool(RPPFileNameBuf))
 				MessageBox(g_hwndParent, __LOCALIZE("Could not launch REAPER!","sws_mbox"), __LOCALIZE("Xenakios - Error","sws_mbox"), MB_OK);
 		}
@@ -1038,81 +1033,32 @@ void DoOpenAssociatedRPP(COMMAND_T*)
 typedef struct
 {
 	double Gap;
-	int ModeA;
-	int ModeB;
-	int ModeC;
+	bool bEnd;
 } t_ReposItemsParams;
 
-t_ReposItemsParams g_ReposItemsParams;
+t_ReposItemsParams g_ReposItemsParams = { 1.0, false };
 
-bool g_FirstReposItemsRun = true;
-
-void RepositionItems(double theGap,int ModeA,int ModeB,int ModeC) // ModeA : gap from item starts/end... ModeB=per track/all items...ModeC=seconds/beats...
+void RepositionItems(double theGap, bool bEnd) // bEnd = true gap from end else start
 {
-	//
-	MediaTrack* MunRaita;
-	MediaItem* CurItem;
+	WDL_TypedBuf<MediaItem*> items;
 
-	int numItems;
-	bool ItemSelected=false;
-	int PrevSelItemInd=-1;
-	int FirstSelItemInd=-1;
-	int i;
-	int j;
-	for (i=0;i<GetNumTracks();i++)
+	int numTracks = CountTracks(NULL);
+	for (int i = 0; i < numTracks; i++)
 	{
-		MunRaita = CSurf_TrackFromID(i+1,FALSE);
-		numItems=GetTrackNumMediaItems(MunRaita);
-		//MediaItem* **MediaItemsOnTrack = new (MediaItem*)[numItems];
-		MediaItem** MediaItemsOnTrack = new MediaItem*[numItems];
+		MediaTrack* track = CSurf_TrackFromID(i + 1, false);
+		SWS_GetSelectedMediaItemsOnTrack(&items, track);
 
-		for (j=0;j<numItems;j++)
+		for (int j = 1; j < items.GetSize(); j++)
 		{
-			CurItem = GetTrackMediaItem(MunRaita,j);
-			MediaItemsOnTrack[j]=CurItem;
-			bool X;
-			X=*(bool*)GetSetMediaItemInfo(CurItem,"B_UISEL",NULL);
-			if ((FirstSelItemInd==-1) && (X==true)) FirstSelItemInd=j;
-		}
-		PrevSelItemInd=FirstSelItemInd;
-		for (j=0;j<numItems;j++)
-		{
-			ItemSelected=*(bool*)GetSetMediaItemInfo(MediaItemsOnTrack[j],"B_UISEL",NULL);
-			if (ItemSelected==TRUE)
-			{
-				//double SnapOffset=*(double*)GetSetMediaItemInfo(CurItem,"D_SNAPOFFSET",NULL);
-				double NewPos;
-				double OldPos=*(double*)GetSetMediaItemInfo(MediaItemsOnTrack[j],"D_POSITION",NULL);
-				//double OldPos=g_StoredPositions[ItemCounter];
-				if (ModeA==0)
-				{
-					if (j==FirstSelItemInd) NewPos=OldPos;
-					if (j>FirstSelItemInd)
-					{
-						OldPos=*(double*)GetSetMediaItemInfo(MediaItemsOnTrack[PrevSelItemInd],"D_POSITION",NULL);
-						NewPos=OldPos+theGap;
-					}
-				}
-				if (ModeA==1)
-				{
-					if (j==FirstSelItemInd) NewPos=OldPos;
-					if (j>FirstSelItemInd)
-					{
-						OldPos=*(double*)GetSetMediaItemInfo(MediaItemsOnTrack[PrevSelItemInd],"D_POSITION",NULL);
-						double PrevLen=*(double*)GetSetMediaItemInfo(MediaItemsOnTrack[PrevSelItemInd],"D_LENGTH",NULL);
-						double PrevEnd=OldPos+PrevLen;
-						NewPos=PrevEnd+theGap;
-					}
-				}
+			double dPrevItemStart = *(double*)GetSetMediaItemInfo(items.Get()[j - 1], "D_POSITION", NULL);
+			double dNewPos = dPrevItemStart + theGap;
+			if (bEnd)  // From the previous selected item end, add the prev item length
+				dNewPos += *(double*)GetSetMediaItemInfo(items.Get()[j-1], "D_LENGTH", NULL);
 
-				GetSetMediaItemInfo(MediaItemsOnTrack[j],"D_POSITION",&NewPos);
-				PrevSelItemInd=j;
-			}
+			GetSetMediaItemInfo(items.Get()[j], "D_POSITION", &dNewPos);
 		}
-		delete[] MediaItemsOnTrack;
 	}
 }
-
 
 WDL_DLGRET ReposItemsDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
@@ -1123,13 +1069,13 @@ WDL_DLGRET ReposItemsDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPar
     {
 		case WM_INITDIALOG:
 		{
-			if (g_ReposItemsParams.ModeA == 0)
+			if (!g_ReposItemsParams.bEnd)
 				CheckDlgButton(hwnd, IDC_RADIO1, BST_CHECKED);
-			else if (g_ReposItemsParams.ModeA == 1)
+			else
 				CheckDlgButton(hwnd, IDC_RADIO2, BST_CHECKED);
-			char TextBuf[32];
+			char TextBuf[314];
 
-			sprintf(TextBuf,"%.2f",g_ReposItemsParams.Gap);
+			sprintf(TextBuf, "%.2f", g_ReposItemsParams.Gap);
 			SetDlgItemText(hwnd, IDC_EDIT1, TextBuf);
 			SetFocus(GetDlgItem(hwnd, IDC_EDIT1));
 			SendMessage(GetDlgItem(hwnd, IDC_EDIT1), EM_SETSEL, 0, -1);
@@ -1141,24 +1087,20 @@ WDL_DLGRET ReposItemsDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPar
                 case IDOK:
 				{
 					char textbuf[30];
-					GetDlgItemText(hwnd,IDC_EDIT1,textbuf,30);
-					double theGap=atof(textbuf);
-					int modeA=0;
-					if (IsDlgButtonChecked(hwnd,IDC_RADIO1) == BST_CHECKED) modeA = 0;
-					if (IsDlgButtonChecked(hwnd,IDC_RADIO2) == BST_CHECKED) modeA = 1;
-					RepositionItems(theGap,modeA,0,0);
+					GetDlgItemText(hwnd, IDC_EDIT1, textbuf, 30);
+					double theGap = atof(textbuf);
+					bool bEnd = IsDlgButtonChecked(hwnd, IDC_RADIO2) == BST_CHECKED;
+					RepositionItems(theGap, bEnd);
 					UpdateTimeline();
-					Undo_OnStateChangeEx(__LOCALIZE("Reposition items","sws_undo"),UNDO_STATE_ITEMS,-1);
-					g_ReposItemsParams.Gap=theGap;
-					g_ReposItemsParams.ModeA=modeA;
-					g_ReposItemsParams.ModeB=0;
-					g_ReposItemsParams.ModeC=0;
+					Undo_OnStateChangeEx(__LOCALIZE("Reposition items", "sws_undo"), UNDO_STATE_ITEMS, -1);
+					g_ReposItemsParams.Gap = theGap;
+					g_ReposItemsParams.bEnd = bEnd;
 
-					EndDialog(hwnd,0);
+					EndDialog(hwnd, 0);
 					break;
 				}
 				case IDCANCEL:
-					EndDialog(hwnd,0);
+					EndDialog(hwnd, 0);
 					break;
 			}
 	}
@@ -1167,14 +1109,6 @@ WDL_DLGRET ReposItemsDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lPar
 
 void DoReposItemsDlg(COMMAND_T*)
 {
-	if (g_FirstReposItemsRun==true)
-	{
-		g_ReposItemsParams.Gap=1.0;
-		g_ReposItemsParams.ModeA=1; // item starts based
-		g_ReposItemsParams.ModeB=0; // per track based
-		g_ReposItemsParams.ModeC=0; // seconds
-		g_FirstReposItemsRun=false;
-	}
 	DialogBox(g_hInst, MAKEINTRESOURCE(IDD_REPOSITEMS), g_hwndParent, ReposItemsDlgProc);
 }
 
@@ -1234,9 +1168,9 @@ int OpenInExtEditor(int editorIdx)
 		{
 			char ExeString[2048];
 			if (editorIdx==0 && g_external_app_paths.PathToAudioEditor1)
-				sprintf(ExeString,"\"%s\" \"%s\"",g_external_app_paths.PathToAudioEditor1,ThePCM->GetFileName());
+				snprintf(ExeString,sizeof(ExeString),"\"%s\" \"%s\"",g_external_app_paths.PathToAudioEditor1,ThePCM->GetFileName());
 			else if (editorIdx==1 && g_external_app_paths.PathToAudioEditor2)
-				sprintf(ExeString,"\"%s\" \"%s\"",g_external_app_paths.PathToAudioEditor2,ThePCM->GetFileName());
+				snprintf(ExeString,sizeof(ExeString),"\"%s\" \"%s\"",g_external_app_paths.PathToAudioEditor2,ThePCM->GetFileName());
 			DoLaunchExternalTool(ExeString);
 		}
 	}
@@ -1321,7 +1255,7 @@ void PerformSwingItemPositions(double swingBase,double swingAmt)
 
 WDL_DLGRET SwingItemsDlgProc(HWND hwnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
-	char tbuf[200];
+	char tbuf[314];
 
 	if (INT_PTR r = SNM_HookThemeColorsMessage(hwnd, Message, wParam, lParam))
 		return r;

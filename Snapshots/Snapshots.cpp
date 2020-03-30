@@ -31,7 +31,7 @@
 #include "SnapshotMerge.h"
 #include "../Prompt.h"
 #include "../reaper/localize.h"
-#include "../../WDL/projectcontext.h"
+#include "WDL/projectcontext.h"
 
 
 #define SNAP_OPTIONS_KEY "Snapshot Options"
@@ -70,6 +70,8 @@ static SWSProjConfig<ProjSnapshot> g_ss;
 SWS_SnapshotsWnd* g_pSSWnd=NULL;
 void PasteSnapshot(COMMAND_T*);
 void MergeSnapshot(Snapshot* ss);
+void DeleteSnapshot(Snapshot* ss);
+void DeleteAllSnapshots(COMMAND_T* = NULL);
 
 static int g_iMask = ALL_MASK;
 static bool g_bSelOnly_OnRecall = false;
@@ -81,6 +83,7 @@ static bool g_bHideNewOnRecall = true;
 static bool g_bPromptOnNew = false;
 static bool g_bHideOptions = false;
 static bool g_bShowSelOnly = false;
+static bool g_bPromptOnDeleted = true;
 
 void UpdateSnapshotsDialog(bool bSelChange)
 {
@@ -271,7 +274,7 @@ void SWS_SnapshotsView::GetItemText(SWS_ListItem* item, int iCol, char* str, int
 	switch(iCol)
 	{
 	case 0:
-		_snprintf(str, iStrMax, "%d", ss->m_iSlot);
+		snprintf(str, iStrMax, "%d", ss->m_iSlot);
 		break;
 	case 1:
 		if (ss->m_cName)
@@ -327,20 +330,7 @@ void SWS_SnapshotsView::OnItemClk(SWS_ListItem* item, int iCol, int iKeyState)
 	// Delete (alt click)
 	else if (!(iKeyState & LVKF_SHIFT) && !(iKeyState & LVKF_CONTROL) && (iKeyState & LVKF_ALT))
 	{
-		if (g_ss.Get()->m_pCurSnapshot == ss)
-			g_ss.Get()->m_pCurSnapshot = NULL;
-
-		int iSlot = ss->m_iSlot;
-		g_ss.Get()->m_snapshots.Delete(g_ss.Get()->m_snapshots.Find(ss), true);
-
-		//clean up gaps rather than search for them on insert
-		for (int i = 0; i < g_ss.Get()->m_snapshots.GetSize(); i++)
-			if (g_ss.Get()->m_snapshots.Get(i)->m_iSlot > iSlot)
-				g_ss.Get()->m_snapshots.Get(i)->m_iSlot--;
-
-		char undoStr[128]="";
-		_snprintf(undoStr, 128, __LOCALIZE_VERFMT("Delete snapshot %d","sws_DLG_101"), iSlot);
-		Undo_OnStateChangeEx(undoStr, UNDO_STATE_MISCCFG, -1);
+		DeleteSnapshot(ss);
 		Update();
 	}
 }
@@ -371,7 +361,7 @@ SWS_SnapshotsWnd::SWS_SnapshotsWnd()
 {
 	// Restore state
 	char str[32];
-	GetPrivateProfileString(SWS_INI, SNAP_OPTIONS_KEY, "559 0 0 0 1 0 0 0 0", str, 32, get_ini_file());
+	GetPrivateProfileString(SWS_INI, SNAP_OPTIONS_KEY, "559 0 0 0 1 0 0 0 0 1", str, 32, get_ini_file());
 	LineParser lp(false);
 	if (!lp.parse(str))
 	{
@@ -384,6 +374,7 @@ SWS_SnapshotsWnd::SWS_SnapshotsWnd()
 		m_iSelType = lp.gettoken_int(6);
 		g_bSelOnly_OnRecall = lp.gettoken_int(7) ? true : false;
 		g_bShowSelOnly = lp.gettoken_int(8) ? true : false;
+		g_bPromptOnDeleted = lp.gettoken_int(9) ? true : false;
 	}
 	// Remove deprecated FXATM
 	if (g_iMask & FXATM_MASK)
@@ -424,6 +415,7 @@ void SWS_SnapshotsWnd::Update()
 	CheckDlgButton(m_hwnd, IDC_NAMEPROMPT,			g_bPromptOnNew			? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(m_hwnd, IDC_HIDENEW,				g_bHideNewOnRecall		? BST_CHECKED : BST_UNCHECKED);
 	CheckDlgButton(m_hwnd, IDC_SHOWSELONLY,			g_bShowSelOnly			? BST_CHECKED : BST_UNCHECKED);
+	CheckDlgButton(m_hwnd, IDC_DELTRACKSPROMPT,		g_bPromptOnDeleted		? BST_CHECKED : BST_UNCHECKED);
 	for (int i = 0; i < MASK_CTRLS; i++)
 	{
 		CheckDlgButton(m_hwnd, cSSCtrls[i], g_iMask & cSSMasks[i] ? BST_CHECKED : BST_UNCHECKED);
@@ -444,6 +436,11 @@ void SWS_SnapshotsWnd::RenameCurrent()
 		if (g_ss.Get()->m_snapshots.Get(i) == g_ss.Get()->m_pCurSnapshot)
 			break;
 	m_pLists.Get(0)->EditListItem((SWS_ListItem*)g_ss.Get()->m_snapshots.Get(i), 1);
+}
+
+bool SWS_SnapshotsWnd::GetPromptOnDeleted()
+{
+	return g_bPromptOnDeleted;
 }
 
 void SWS_SnapshotsWnd::OnInitDlg()
@@ -467,6 +464,7 @@ void SWS_SnapshotsWnd::OnInitDlg()
 	m_resize.init_item(IDC_APPLYRECALL, 1.0, 0.0, 1.0, 0.0);
 	m_resize.init_item(IDC_NAMEPROMPT, 1.0, 0.0, 1.0, 0.0);
 	m_resize.init_item(IDC_HIDENEW, 1.0, 0.0, 1.0, 0.0);
+	m_resize.init_item(IDC_DELTRACKSPROMPT, 1.0, 0.0, 1.0, 0.0);
 #ifndef _SNAP_TINY_BUTTONS
 	m_resize.init_item(IDC_OPTIONS, 1.0, 1.0, 1.0, 1.0);
 #endif
@@ -617,20 +615,8 @@ void SWS_SnapshotsWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 		}
 		case DELETE_MSG:
 		{
-			Snapshot* ss = (Snapshot*)m_pLists.Get(0)->EnumSelected(NULL);
-			if (ss)
-			{
-				char undoStr[128]="";
-				_snprintf(undoStr, 128, __LOCALIZE_VERFMT("Delete snapshot %d","sws_DLG_101"), ss->m_iSlot);
-
-				//clean up gaps rather than search for them on insert
-				for (int i = 0; i < g_ss.Get()->m_snapshots.GetSize(); i++)
-					if (g_ss.Get()->m_snapshots.Get(i)->m_iSlot > ss->m_iSlot)
-						g_ss.Get()->m_snapshots.Get(i)->m_iSlot--;
-
-				g_ss.Get()->m_snapshots.Delete(g_ss.Get()->m_snapshots.Find(ss), true);
-				g_ss.Get()->m_pCurSnapshot = NULL;
-				Undo_OnStateChangeEx(undoStr, UNDO_STATE_MISCCFG, -1);
+			if(Snapshot* ss = (Snapshot*)m_pLists.Get(0)->EnumSelected(NULL)) {
+				DeleteSnapshot(ss);
 				Update();
 			}
 			break;
@@ -690,6 +676,7 @@ void SWS_SnapshotsWnd::OnCommand(WPARAM wParam, LPARAM lParam)
 		case IDC_NAMEPROMPT:
 		case IDC_HIDENEW:
 		case IDC_SHOWSELONLY:
+		case IDC_DELTRACKSPROMPT:
 			// Filter controls are handled in the default case
 			GetOptions();
 			Update();
@@ -735,7 +722,7 @@ HMENU SWS_SnapshotsWnd::OnContextMenu(int x, int y, bool* wantDefaultItems)
 		{
 			int iCmd = SWSGetCommandID(GetSnapshot, i+1);
 			char cName[50];
-			_snprintf(cName, 50, __LOCALIZE_VERFMT("Recall %s","sws_DLG_101"), g_ss.Get()->m_snapshots.Get(i)->m_cName);
+			snprintf(cName, 50, __LOCALIZE_VERFMT("Recall %s","sws_DLG_101"), g_ss.Get()->m_snapshots.Get(i)->m_cName);
 			if (!iCmd)
 				iCmd = LOAD_MSG + i;
 			AddToMenu(contextMenu, cName, iCmd);
@@ -746,6 +733,7 @@ HMENU SWS_SnapshotsWnd::OnContextMenu(int x, int y, bool* wantDefaultItems)
 	AddToMenu(contextMenu, __LOCALIZE("Import snapshot...","sws_DLG_101"), IMPORT_MSG);
 	AddToMenu(contextMenu, __LOCALIZE("New snapshot","sws_DLG_101"), SWSGetCommandID(NewSnapshot));
 	AddToMenu(contextMenu, __LOCALIZE("Paste snapshot","sws_DLG_101"), SWSGetCommandID(PasteSnapshot));
+	AddToMenu(contextMenu, __LOCALIZE("Delete all snapshots","sws_DLG_101"), SWSGetCommandID(DeleteAllSnapshots));
 
 	return contextMenu;
 }
@@ -796,7 +784,7 @@ void SWS_SnapshotsWnd::OnDestroy()
 	char str[256];
 
 	// Save window state
-	sprintf(str, "%d %d %d %d %d %d %d %d %d",
+	sprintf(str, "%d %d %d %d %d %d %d %d %d %d",
 		g_iMask,
 		g_bApplyFilterOnRecall ? 1 : 0,
 		g_bHideOptions ? 1 : 0,
@@ -805,7 +793,8 @@ void SWS_SnapshotsWnd::OnDestroy()
 		g_bSelOnly_OnSave ? 1 : 0,
 		m_iSelType,
 		g_bSelOnly_OnRecall ? 1 : 0,
-		g_bShowSelOnly ? 1 : 0);
+		g_bShowSelOnly ? 1 : 0,
+		g_bPromptOnDeleted ? 1 : 0);
 	WritePrivateProfileString(SWS_INI, SNAP_OPTIONS_KEY, str, get_ini_file());
 
 #ifdef _SNAP_TINY_BUTTONS
@@ -863,6 +852,7 @@ void SWS_SnapshotsWnd::GetOptions()
 	g_bShowSelOnly = IsDlgButtonChecked(m_hwnd, IDC_SHOWSELONLY) == BST_CHECKED;
 	g_bApplyFilterOnRecall = IsDlgButtonChecked(m_hwnd, IDC_APPLYRECALL) == BST_CHECKED;
 	g_bPromptOnNew = IsDlgButtonChecked(m_hwnd, IDC_NAMEPROMPT) == BST_CHECKED;
+	g_bPromptOnDeleted = IsDlgButtonChecked(m_hwnd, IDC_DELTRACKSPROMPT) == BST_CHECKED;
 }
 
 void SWS_SnapshotsWnd::ShowControls(bool bShow)
@@ -885,6 +875,7 @@ void SWS_SnapshotsWnd::ShowControls(bool bShow)
 	ShowWindow(GetDlgItem(m_hwnd, IDC_APPLYRECALL), bShow);
 	ShowWindow(GetDlgItem(m_hwnd, IDC_NAMEPROMPT), bShow);
 	ShowWindow(GetDlgItem(m_hwnd, IDC_HIDENEW), bShow);
+	ShowWindow(GetDlgItem(m_hwnd, IDC_DELTRACKSPROMPT), bShow);
 }
 
 #ifdef _SNAP_TINY_BUTTONS
@@ -966,7 +957,7 @@ void SaveSnapshot(int slot)
 			if (g_ss.Get()->m_snapshots.Get(i)->m_iSlot > slot)
 				break;
 		char str[20];
-		sprintf(str, "%s %d", __LOCALIZE("Mix","sws_DLG_101"), slot);
+		snprintf(str, sizeof(str), "%s %d", __LOCALIZE("Mix","sws_DLG_101"), slot);
 		g_ss.Get()->m_pCurSnapshot = g_ss.Get()->m_snapshots.Insert(i, new Snapshot(slot, g_iMask, g_bSelOnly_OnSave, str, NULL));
 	}
 	else // Overwriting slot
@@ -1095,6 +1086,25 @@ void CopyAllSnapshot(COMMAND_T*)
 	CopySnapshotToClipboard(&ss);
 }
 
+void DeleteCurSnapshot(COMMAND_T*)
+{
+	if(Snapshot *ss = g_ss.Get()->m_pCurSnapshot) {
+		DeleteSnapshot(ss);
+		g_pSSWnd->Update();
+	}
+}
+
+void DeleteAllSnapshots(COMMAND_T *action)
+{
+	g_ss.Get()->m_pCurSnapshot = NULL;
+	g_ss.Get()->m_snapshots.Empty(true);
+
+	if(action) { // was this user-initiated?
+		Undo_OnStateChangeEx(action->menuText, UNDO_STATE_MISCCFG, -1);
+		g_pSSWnd->Update();
+	}
+}
+
 // This function adds the snapshot or deletes it from memory
 void MergeSnapshot(Snapshot* ss)
 {
@@ -1131,6 +1141,24 @@ void PasteSnapshot(COMMAND_T*)
 	MergeSnapshot(ss);
 }
 
+void DeleteSnapshot(Snapshot *ss)
+{
+	if (g_ss.Get()->m_pCurSnapshot == ss)
+		g_ss.Get()->m_pCurSnapshot = NULL;
+
+	const int iSlot = ss->m_iSlot;
+	g_ss.Get()->m_snapshots.Delete(g_ss.Get()->m_snapshots.Find(ss), true);
+
+	// clean up gaps rather than search for them on insert
+	for (int i = 0; i < g_ss.Get()->m_snapshots.GetSize(); i++)
+		if (g_ss.Get()->m_snapshots.Get(i)->m_iSlot > iSlot)
+			g_ss.Get()->m_snapshots.Get(i)->m_iSlot--;
+
+	char undoStr[128] = "";
+	snprintf(undoStr, 128, __LOCALIZE_VERFMT("Delete snapshot %d", "sws_DLG_101"), iSlot);
+	Undo_OnStateChangeEx(undoStr, UNDO_STATE_MISCCFG, -1);
+}
+
 //!WANT_LOCALIZE_SWS_CMD_TABLE_BEGIN:sws_actions
 static COMMAND_T g_commandTable[] =
 {
@@ -1154,7 +1182,8 @@ static COMMAND_T g_commandTable[] =
 
 	{ { DEFACCEL, "SWS: New snapshot (with current settings)" },			"SWSSNAPSHOT_NEW",	     NewSnapshot,		   NULL, 0 },
 	{ { DEFACCEL, "SWS: New snapshot and edit name" },						"SWSSNAPSHOT_NEWEDIT",   NewSnapshotEdit,	   NULL, 1 },
-	//{ { DEFACCEL, "SWS: Delete current snapshot" },						"SWSSNAPSHOT_NEWEDIT",   NewSnapshotEdit,	   NULL, 1 },
+	{ { DEFACCEL, "SWS: Delete current snapshot" },						"SWSSNAPSHOT_DELCUR",   DeleteCurSnapshot },
+	{ { DEFACCEL, "SWS: Delete all snapshots" },							"SWSSNAPSHOT_DELALL",   DeleteAllSnapshots, "Delete all snapshots" },
 	{ { DEFACCEL, "SWS: Save as snapshot 1" },								"SWSSNAPSHOT_SAVE1",	 SaveSnapshot,         NULL, 1 },
 	{ { DEFACCEL, "SWS: Save as snapshot 2" },								"SWSSNAPSHOT_SAVE2",	 SaveSnapshot,         NULL, 2 },
 	{ { DEFACCEL, "SWS: Save as snapshot 3" },								"SWSSNAPSHOT_SAVE3",	 SaveSnapshot,         NULL, 3 },
@@ -1219,8 +1248,7 @@ static void SaveExtensionConfig(ProjectStateContext *ctx, bool isUndo, struct pr
 
 static void BeginLoadProjectState(bool isUndo, struct project_config_extension_t *reg)
 {
-	g_ss.Get()->m_snapshots.Empty(true);
-	g_ss.Get()->m_pCurSnapshot = NULL;
+	DeleteAllSnapshots();
 	g_ss.Cleanup();
 	UpdateSnapshotsDialog();
 }

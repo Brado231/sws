@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Item.cpp
 /
-/ Copyright (c) 2009-2013 Jeffos
+/ Copyright (c) 2009 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -423,14 +423,13 @@ bool SplitSelectItemsInInterval(const char* _undoTitle, double _pos1, double _po
 void SplitSelectAllItemsInRegion(COMMAND_T* _ct)
 {
 	double cursorPos = GetCursorPositionEx(NULL);
-	int x=0, lastx=0; double dPos, dEnd; bool isRgn;
+	int x=0; double dPos, dEnd; bool isRgn;
 	while ((x = EnumProjectMarkers2(NULL, x, &isRgn, &dPos, &dEnd, NULL, NULL)))
 	{
 		if (isRgn && cursorPos >= dPos && cursorPos <= dEnd) {
 			SplitSelectItemsInInterval(SWS_CMD_SHORTNAME(_ct), dPos, dEnd);
 			return;
 		}
-		lastx=x;
 	}
 }
 
@@ -439,7 +438,7 @@ void SplitSelectAllItemsInRegion(COMMAND_T* _ct)
 // Takes
 ///////////////////////////////////////////////////////////////////////////////
 
-WDL_PtrList_DeleteOnDestroy<WDL_FastString> g_takesClipoard;
+WDL_PtrList_DOD<WDL_FastString> g_takesClipoard;
 
 void CopyCutTakes(COMMAND_T* _ct)
 {
@@ -972,13 +971,13 @@ bool DeleteTakeAndMedia(int _mode)
 							{
 								char buf[SNM_MAX_PATH];
 								if (pcm && pcm->GetFileName() && *pcm->GetFileName() && _stricmp(GetFileExtension(pcm->GetFileName()), "rpp"))
-									_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d, take %d] Delete take '%s' and its media file '%s'?","sws_mbox"), i, j+1, originalTkIdx+1, tkName, tkDisplayName);
+									snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d, take %d] Delete take '%s' and its media file '%s'?","sws_mbox"), i, j+1, originalTkIdx+1, tkName, tkDisplayName);
 								else if (pcm && pcm->GetFileName() && *pcm->GetFileName() && !_stricmp(GetFileExtension(pcm->GetFileName()), "rpp"))
-									_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d, take %d] Delete take '%s'?\r\nNote: the media file '%s' will not be deleted (project within project)","sws_mbox"), i, j+1, originalTkIdx+1, tkName, tkDisplayName);
+									snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d, take %d] Delete take '%s'?\r\nNote: the media file '%s' will not be deleted (project within project)","sws_mbox"), i, j+1, originalTkIdx+1, tkName, tkDisplayName);
 								else if (pcm && pcm->GetFileName() && !*(pcm->GetFileName())) 
-									_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d, take %d] Delete take '%s' (MIDI in-project)?","sws_mbox"), i, j+1, originalTkIdx+1, tkName);
+									snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d, take %d] Delete take '%s' (MIDI in-project)?","sws_mbox"), i, j+1, originalTkIdx+1, tkName);
 								else 
-									_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d] Delete take %d (empty take) ?","sws_mbox"), i, j+1, originalTkIdx+1); // v3 or v4 empty takes
+									snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("[Track %d, item %d] Delete take %d (empty take) ?","sws_mbox"), i, j+1, originalTkIdx+1); // v3 or v4 empty takes
 
 								rc = MessageBox(GetMainHwnd(), buf, __LOCALIZE("S&M - Delete take and source files (no undo!)","sws_mbox"), MB_YESNOCANCEL);
 								if (rc == IDCANCEL) {
@@ -996,15 +995,10 @@ bool DeleteTakeAndMedia(int _mode)
 							nbRemainingTakes--;
 							if (pcm && FileOrDirExists(pcm->GetFileName()) && _stricmp(GetFileExtension(pcm->GetFileName()), "rpp"))
 							{
-								// set all media offline (yeah, EACH TIME! Fails otherwise: http://github.com/Jeff0S/sws/issues/175#c3)
+								// set all media offline (yeah, EACH TIME! Fails otherwise: http://github.com/reaper-oss/sws/issues/175#c3)
 								Main_OnCommand(40100,0); 
 								if (SNM_DeleteFile(pcm->GetFileName(), true))
-								{
-									char peakFn[SNM_MAX_PATH] = "";
-									GetPeakFileName(pcm->GetFileName(), peakFn, sizeof(peakFn));
-									if (peakFn && *peakFn != '\0')
-										SNM_DeleteFile(peakFn, true); // no delete check (peaks files can be absent)
-								}
+									SNM_DeletePeakFile(pcm->GetFileName(), true); // no delete check (peaks files can be absent)
 								else
 									deleteFileOK = false;
 							}
@@ -1051,7 +1045,7 @@ void DeleteTakeAndMedia(COMMAND_T* _ct) {
 
 int GetPitchTakeEnvRangeFromPrefs()
 {
-	int range = *(int*)GetConfigVar("pitchenvrange");
+	int range = *ConfigVar<int>("pitchenvrange");
 	// "snap to semitones" bit set ?
 	if (range > 0xFF)
 		range &= 0xFF;
@@ -1059,7 +1053,7 @@ int GetPitchTakeEnvRangeFromPrefs()
 }
 
 // callers must use UpdateArrange() at some point if it returns true..
-bool PatchTakeEnvelopeVis(MediaItem* _item, int _takeIdx, const char* _envKeyword, const char* _vis, const WDL_FastString* _defaultPoint, bool _reset)
+bool PatchTakeEnvelopeActVis(MediaItem* _item, int _takeIdx, const char* _envKeyword, const char* _vis, const WDL_FastString* _defaultPoint, bool _reset, bool patchVisibilityOnly)
 {
 	bool updated = false;
 	if (_item)
@@ -1104,6 +1098,8 @@ bool PatchTakeEnvelopeVis(MediaItem* _item, int _takeIdx, const char* _envKeywor
 					// prepare the new visibility (in one go)
 					{
 						SNM_TakeEnvParserPatcher pEnv(&takeChunk);
+						if (patchVisibilityOnly)
+							pEnv.SetPatchVisibilityOnly(true);
 						takeUpdate = pEnv.SetVal(_envKeyword, atoi(vis));
 					}
 				}
@@ -1127,6 +1123,10 @@ bool PatchTakeEnvelopeVis(MediaItem* _item, int _takeIdx, const char* _envKeywor
 					takeChunk.Append(" 1 1.000000\nLANEHEIGHT 0 0\nARM ");
 					takeChunk.Append(vis);
 					takeChunk.Append("\nDEFSHAPE 0\n");
+					// NF: #1054, obey volume fader scaling pref.
+					const ConfigVar<int> volenvrange("volenvrange");
+					if (volenvrange && *volenvrange & (1 << 1))
+						takeChunk.Append("VOLTYPE 1\n");
 					takeChunk.Append(_defaultPoint);
 					takeChunk.Append("\n>\n");
 					takeUpdate = true;
@@ -1141,7 +1141,7 @@ bool PatchTakeEnvelopeVis(MediaItem* _item, int _takeIdx, const char* _envKeywor
 	return updated;
 }
 
-bool PatchTakeEnvelopeVis(const char* _undoTitle, const char* _envKeyword, const char* _vis, const WDL_FastString* _defaultPoint, bool _reset) 
+bool PatchTakeEnvelopeActVis(const char* _undoTitle, const char* _envKeyword, const char* _vis, const WDL_FastString* _defaultPoint, bool _reset, bool patchVisibilityOnly) 
 {
 	bool updated = false;
 	for (int i = 1; i <= GetNumTracks(); i++) // skip master
@@ -1151,7 +1151,7 @@ bool PatchTakeEnvelopeVis(const char* _undoTitle, const char* _envKeyword, const
 		{
 			MediaItem* item = GetTrackMediaItem(tr,j);
 			if (item && *(bool*)GetSetMediaItemInfo(item,"B_UISEL",NULL))
-				updated |= PatchTakeEnvelopeVis(item, *(int*)GetSetMediaItemInfo(item,"I_CURTAKE",NULL), _envKeyword, _vis, _defaultPoint, _reset);
+				updated |= PatchTakeEnvelopeActVis(item, *(int*)GetSetMediaItemInfo(item,"I_CURTAKE",NULL), _envKeyword, _vis, _defaultPoint, _reset, patchVisibilityOnly);
 		}
 	}
 
@@ -1168,47 +1168,88 @@ void PanTakeEnvelope(COMMAND_T* _ct)
 {
 	WDL_FastString defaultPoint("PT 0.000000 ");
 	defaultPoint.AppendFormatted(128, "%d.000000 0", (int)_ct->user);
-	PatchTakeEnvelopeVis(SWS_CMD_SHORTNAME(_ct), "PANENV", "1", &defaultPoint, true);
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "PANENV", "1", &defaultPoint, true, false);
 }
 
-void ShowHideTakeVolEnvelope(COMMAND_T* _ct) 
+void BypassUnbypassShowHideTakeVolEnvelope(COMMAND_T* _ct) 
 {
 	char cVis[2] = ""; // empty means toggle
 	int value = (int)_ct->user;
-	if (value >= 0 && _snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
 		return;
 	WDL_FastString defaultPoint("PT 0.000000 1.000000 0");
-	PatchTakeEnvelopeVis(SWS_CMD_SHORTNAME(_ct), "VOLENV", cVis, &defaultPoint, false);
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "VOLENV", cVis, &defaultPoint, false, false);
 }
 
-void ShowHideTakePanEnvelope(COMMAND_T* _ct) 
+void BypassUnbypassShowHideTakePanEnvelope(COMMAND_T* _ct) 
 {
 	char cVis[2] = ""; // empty means toggle
 	int value = (int)_ct->user;
-	if (value >= 0 && _snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
 		return;
 	WDL_FastString defaultPoint("PT 0.000000 0.000000 0");
-	PatchTakeEnvelopeVis(SWS_CMD_SHORTNAME(_ct), "PANENV", cVis, &defaultPoint, false);
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "PANENV", cVis, &defaultPoint, false, false);
 }
 
-void ShowHideTakeMuteEnvelope(COMMAND_T* _ct) 
+void BypassUnbypassShowHideTakeMuteEnvelope(COMMAND_T* _ct) 
 {
 	char cVis[2] = ""; // empty means toggle
 	int value = (int)_ct->user;
-	if (value >= 0 && _snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
 		return;
 	WDL_FastString defaultPoint("PT 0.000000 1.000000 1");
-	PatchTakeEnvelopeVis(SWS_CMD_SHORTNAME(_ct), "MUTEENV", cVis, &defaultPoint, false);
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "MUTEENV", cVis, &defaultPoint, false, false);
 }
 
-void ShowHideTakePitchEnvelope(COMMAND_T* _ct) 
+void BypassUnbypassShowHideTakePitchEnvelope(COMMAND_T* _ct) 
 {
 	char cVis[2] = ""; // empty means toggle
 	int value = (int)_ct->user;
-	if (value >= 0 && _snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
 		return;
 	WDL_FastString defaultPoint("PT 0.000000 0.000000 0");
-	PatchTakeEnvelopeVis(SWS_CMD_SHORTNAME(_ct), "PITCHENV", cVis, &defaultPoint, false);
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "PITCHENV", cVis, &defaultPoint, false, false);
+}
+
+// NF: these *only* show/hide (no bypass/unbypass), #1078
+void ShowHideTakeVolEnvelope(COMMAND_T* _ct)
+{
+	char cVis[2] = ""; // empty means toggle
+	int value = (int)_ct->user;
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+		return;
+	WDL_FastString defaultPoint("PT 0.000000 1.000000 0");
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "VOLENV", cVis, &defaultPoint, false, true);
+}
+
+void ShowHideTakePanEnvelope(COMMAND_T* _ct)
+{
+	char cVis[2] = ""; // empty means toggle
+	int value = (int)_ct->user;
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+		return;
+	WDL_FastString defaultPoint("PT 0.000000 0.000000 0");
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "PANENV", cVis, &defaultPoint, false, true);
+}
+
+void ShowHideTakeMuteEnvelope(COMMAND_T* _ct)
+{
+	char cVis[2] = ""; // empty means toggle
+	int value = (int)_ct->user;
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+		return;
+	WDL_FastString defaultPoint("PT 0.000000 1.000000 1");
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "MUTEENV", cVis, &defaultPoint, false, true);
+}
+
+void ShowHideTakePitchEnvelope(COMMAND_T* _ct)
+{
+	char cVis[2] = ""; // empty means toggle
+	int value = (int)_ct->user;
+	if (value >= 0 && snprintfStrict(cVis, sizeof(cVis), "%d", value) < 0)
+		return;
+	WDL_FastString defaultPoint("PT 0.000000 0.000000 0");
+	PatchTakeEnvelopeActVis(SWS_CMD_SHORTNAME(_ct), "PITCHENV", cVis, &defaultPoint, false, true);
 }
 
 // *** some wrappers for Padre ***
@@ -1220,7 +1261,7 @@ bool ShowTakeEnv(MediaItem_Take* _take, const char* _envKeyword, const WDL_FastS
 	{
 		int idx = GetTakeIndex(item, _take);
 		if (idx >= 0) 
-			shown = PatchTakeEnvelopeVis(item, idx, _envKeyword , "1", _defaultPoint, false);
+			shown = PatchTakeEnvelopeActVis(item, idx, _envKeyword , "1", _defaultPoint, false, false);
 	}
 	return shown;
 }
@@ -1252,15 +1293,9 @@ bool ShowTakeEnvPitch(MediaItem_Take* _take) {
 
 WDL_PtrList<void> g_toolbarItemSel[SNM_ITEM_SEL_COUNT];
 WDL_PtrList<void> g_toolbarItemSelToggle[SNM_ITEM_SEL_COUNT];
-#ifdef _SNM_MUTEX
-SWS_Mutex g_toolbarItemSelLock;
-#endif
 
 void RefreshOffscreenItems()
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_toolbarItemSelLock);
-#endif
 	for(int i=0; i<SNM_ITEM_SEL_COUNT; i++)
 		g_toolbarItemSel[i].Empty();
 
@@ -1335,9 +1370,6 @@ void RefreshOffscreenItems()
 // deselects offscreen items and reselects those items -on toggle-
 bool ToggleOffscreenSelItems(int _dir) // primitive func
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_toolbarItemSelLock);
-#endif
 	bool updated = false;
 
 	int dir1=_dir, dir2=_dir+1;
@@ -1405,9 +1437,6 @@ void ToggleOffscreenSelItems(COMMAND_T* _ct)
 // background job done in RefreshOffscreenItems() 
 int HasOffscreenSelItems(COMMAND_T* _ct)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_toolbarItemSelLock);
-#endif
 	// force refresh if not auto
 	if (!g_SNM_ToolbarRefresh) 
 		RefreshOffscreenItems();
@@ -1427,9 +1456,6 @@ int HasOffscreenSelItems(COMMAND_T* _ct)
 // deselects offscreen items
 void UnselectOffscreenItems(COMMAND_T* _ct)
 {
-#ifdef _SNM_MUTEX
-	SWS_SectionLock lock(&g_toolbarItemSelLock);
-#endif
 	// force refresh if not auto
 	if (!g_SNM_ToolbarRefresh) 
 		RefreshOffscreenItems();

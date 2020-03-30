@@ -154,7 +154,7 @@ void InitPresets()
 {
 	char file[512];
 	FILE* f;
-	_snprintf(file, 512, "%s%cSWS-RenamePresets.txt", GetResourcePath(), PATH_SLASH_CHAR);
+	snprintf(file, 512, "%s%cSWS-RenamePresets.txt", GetResourcePath(), PATH_SLASH_CHAR);
 	if (!FileExists(file))
 	{	// Generate defaults
 		f = fopen(file, "w");
@@ -323,7 +323,8 @@ bool MyTakeSortByTimeFunc (MediaItem_Take *a,MediaItem_Take *b)
 void DoAutoRename(COMMAND_T*)
 {
 	g_VecTakesToRename.clear();
-	for (int i = 0; i < CountSelectedMediaItems(NULL); i++)
+	const int cnt=CountSelectedMediaItems(NULL);
+	for (int i = 0; i < cnt; i++)
 	{
 		MediaItem* item = GetSelectedMediaItem(NULL, i);
 		MediaItem_Take* take = GetMediaItemTake(item, -1);

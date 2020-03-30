@@ -1,7 +1,7 @@
 /******************************************************************************
 / SnM_Util.cpp
 /
-/ Copyright (c) 2012-2014 Jeffos
+/ Copyright (c) 2012 and later Jeffos
 /
 /
 / Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -29,10 +29,10 @@
 #include "SnM.h"
 #include "SnM_Chunk.h"
 #include "SnM_Util.h"
+#include "../cfillion/cfillion.hpp" // CF_LocateInExplorer
 #include "../reaper/localize.h"
-#include "../../WDL/sha.h"
-#include "../../WDL/projectcontext.h"
-
+#include <WDL/sha.h>
+#include <WDL/projectcontext.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 // File util
@@ -40,16 +40,14 @@
 
 const char* GetFileRelativePath(const char* _fn)
 {
-	if (const char* p = strrchr(_fn, PATH_SLASH_CHAR))
-		return p+1;
-	return _fn;
+	return WDL_get_filepart(_fn);
 }
 
 const char* GetFileExtension(const char* _fn, bool _wantdot)
 {
-	if (const char* p = strrchr(_fn, '.'))
-		return p+(_wantdot?0:1);
-	return "";
+	const char* p = WDL_get_fileext(_fn);
+	if (*p=='.' && !_wantdot) return p+1;
+	return p;
 }
 
 bool HasFileExtension(const char* _fn, const char* _expectedExt) {
@@ -58,20 +56,23 @@ bool HasFileExtension(const char* _fn, const char* _expectedExt) {
 
 void GetFilenameNoExt(const char* _fullFn, char* _fn, int _fnSz)
 {
-	const char* p = strrchr(_fullFn, PATH_SLASH_CHAR);
-	if (p) p++;
-	else p = _fullFn;
-	lstrcpyn(_fn, p, _fnSz);
-	_fn = strrchr(_fn, '.');
-	if (_fn) *_fn = '\0';
+	lstrcpyn(_fn, GetFileRelativePath(_fullFn), _fnSz);
+	char* p =  (char*)WDL_get_fileext(_fn);
+	if (*p=='.') *p = '\0';
 }
 
 const char* GetFilenameWithExt(const char* _fullFn)
 {
-	const char* p = strrchr(_fullFn, PATH_SLASH_CHAR);
-	if (p) p++;
-	else p = _fullFn;
-	return p;
+	return GetFileRelativePath(_fullFn);
+}
+
+bool IsFullFileName(const char *p)
+{
+#ifdef _WIN32
+	return (p[0] && p[1] == ':' && (p[2] == '\\' || p[2] == '/')) || (p[0] == '\\' && p[1] == '\\');
+#else
+	return p[0]=='/';
+#endif
 }
 
 // check the most restrictive OS forbidden chars (so that filenames are cross-platform)
@@ -106,31 +107,30 @@ bool IsValidFilenameErrMsg(const char* _fn, bool _errMsg)
 	bool ko = !Filenamize((char*)_fn, true);
 	if (ko && _errMsg)
 	{
-		char buf[SNM_MAX_PATH] = "";
-		lstrcpyn(buf, __LOCALIZE("Empty filename!","sws_mbox"), sizeof(buf));
+		char buf[SNM_MAX_PATH];
 		if (_fn && *_fn)
-			_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("Invalid filename: %s\nFilenames cannot contain any of the following characters: / \\ * ? \" < > ' | ^ :","sws_mbox"), _fn);
+			snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("Invalid filename: %s\nFilenames cannot contain any of the following characters: / \\ * ? \" < > ' | ^ :","sws_mbox"), _fn);
+		else
+			lstrcpyn(buf, __LOCALIZE("Empty filename!","sws_mbox"), sizeof(buf));
 		MessageBox(GetMainHwnd(), buf, __LOCALIZE("S&M - Error","sws_mbox"), MB_OK);
 	}
 	return !ko;
 }
 
-// the API function file_exists() is a bit different, it returns false for folders
+// the API function file_exists() is different, it returns false for folders
 bool FileOrDirExists(const char* _fn)
 {
-	if (_fn && *_fn && *_fn!='.') // valid absolute path (1/2)?
+	if (_fn && *_fn && *_fn!='.')
 	{
-		if (const char* p = strrchr(_fn, PATH_SLASH_CHAR)) // valid absolute path (2/2)?
-		{
-			WDL_FastString fn;
-			fn.Set(_fn, *(p+1)? 0 : (int)(p-_fn)); // // bug fix for directories, skip last PATH_SLASH_CHAR if needed
-			struct stat s;
+		WDL_FastString fn(_fn);
+		fn.remove_trailing_dirchars(); // bug fix for directories
+
+		struct stat s;
 #ifdef _WIN32
-			return (statUTF8(fn.Get(), &s) == 0);
+		return (statUTF8(fn.Get(), &s) == 0);
 #else
-			return (stat(fn.Get(), &s) == 0);
+		return (stat(fn.Get(), &s) == 0);
 #endif
-		}
 	}
 	return false;
 }
@@ -142,10 +142,11 @@ bool FileOrDirExistsErrMsg(const char* _fn, bool _errMsg)
 	bool exists = FileOrDirExists(_fn);
 	if (!exists && _errMsg)
 	{
-		char buf[SNM_MAX_PATH] = "";
-		lstrcpyn(buf, __LOCALIZE("Empty filename!","sws_mbox"), sizeof(buf));
+		char buf[SNM_MAX_PATH];
 		if (_fn && *_fn)
-			_snprintfSafe(buf, sizeof(buf), __LOCALIZE_VERFMT("File or directory not found:\n%s","sws_mbox"), _fn);
+			snprintf(buf, sizeof(buf), __LOCALIZE_VERFMT("File or directory not found:\n%s","sws_mbox"), _fn);
+		else
+			lstrcpyn(buf, __LOCALIZE("Empty filename!","sws_mbox"), sizeof(buf));
 		MessageBox(GetMainHwnd(), buf, __LOCALIZE("S&M - Error","sws_mbox"), MB_OK);
 	}
 	return exists;
@@ -158,11 +159,21 @@ bool SNM_DeleteFile(const char* _filename, bool _recycleBin)
 	{
 #ifdef _WIN32
 		if (_recycleBin)
-			return (SendFileToRecycleBin(_filename) ? false : true); // avoid warning C4800
+			return (SendFileToRecycleBin(_filename) == 0);
 #endif
-		ok = (DeleteFile(_filename) ? true : false); // avoid warning C4800
+		ok = !!DeleteFile(_filename);
 	}
 	return ok;
+}
+
+bool SNM_DeletePeakFile(const char* _fn, bool _recycleBin)
+{
+	char peakFn[SNM_MAX_PATH] = "";
+	GetPeakFileName(_fn, peakFn, sizeof(peakFn));
+	if (*peakFn != '\0')
+		return SNM_DeleteFile(peakFn, _recycleBin);
+
+	return false;	
 }
 
 bool SNM_CopyFile(const char* _destFn, const char* _srcFn)
@@ -182,17 +193,7 @@ bool SNM_CopyFile(const char* _destFn, const char* _srcFn)
 void RevealFile(const char* _fn, bool _errMsg)
 {
 	if (FileOrDirExistsErrMsg(_fn, _errMsg))
-	{
-		WDL_FastString cmd;
-#ifdef _WIN32
-		cmd.Set("/select,");
-		cmd.Append(_fn);
-		ShellExecute(NULL, "", "explorer", cmd.Get(), NULL, SW_SHOWNORMAL);
-#else
-		cmd.SetFormatted(SNM_MAX_PATH, "open -R \"%s\"", _fn);
-		system(cmd.Get());
-#endif
-	}
+		CF_LocateInExplorer(_fn);
 }
 
 // browse + return short resource filename (if possible and if _wantFullPath == false)
@@ -200,15 +201,11 @@ void RevealFile(const char* _fn, bool _errMsg)
 bool BrowseResourcePath(const char* _title, const char* _resSubDir, const char* _fileFilters, char* _fn, int _fnSize, bool _wantFullPath)
 {
 	bool ok = false;
-	char defaultPath[SNM_MAX_PATH] = "";
-	if (_snprintfStrict(defaultPath, sizeof(defaultPath), "%s%c%s", GetResourcePath(), PATH_SLASH_CHAR, _resSubDir) < 0)
-		*defaultPath = '\0';
+	char defaultPath[SNM_MAX_PATH];
+	snprintf(defaultPath, sizeof(defaultPath), "%s%c%s", GetResourcePath(), PATH_SLASH_CHAR, _resSubDir);
 	if (char* fn = BrowseForFiles(_title, defaultPath, NULL, false, _fileFilters)) 
 	{
-		if(!_wantFullPath)
-			GetShortResourcePath(_resSubDir, fn, _fn, _fnSize);
-		else
-			lstrcpyn(_fn, fn, _fnSize);
+		lstrcpyn(_fn, _wantFullPath ? fn : GetShortResourcePath(_resSubDir, fn), _fnSize);
 		free(fn);
 		ok = true;
 	}
@@ -221,53 +218,45 @@ bool BrowseResourcePath(const char* _title, const char* _resSubDir, const char* 
 // - *must* work with non existing files (just some string processing here)
 // - *must* be no-op for non resource paths (c:\temp\test.RfxChain -> c:\temp\test.RfxChain)
 // - *must* be no-op for short resource paths 
-void GetShortResourcePath(const char* _resSubDir, const char* _fullFn, char* _shortFn, int _shortFnSize)
+const char* GetShortResourcePath(const char* _resSubDir, const char* _fullFn)
 {
 	if (_resSubDir && *_resSubDir && _fullFn && *_fullFn)
 	{
-		char defaultPath[SNM_MAX_PATH] = "";
-		if (_snprintfStrict(defaultPath, sizeof(defaultPath), "%s%c%s%c", GetResourcePath(), PATH_SLASH_CHAR, _resSubDir, PATH_SLASH_CHAR) < 0)
-			*defaultPath = '\0';
-		if (strstr(_fullFn, defaultPath) == _fullFn) // no stristr: osx + utf-8
-			lstrcpyn(_shortFn, (char*)(_fullFn + strlen(defaultPath)), _shortFnSize);
-		else
-			lstrcpyn(_shortFn, _fullFn, _shortFnSize);
+		static int res_path_len=strlen(GetResourcePath());
+		if (!_strnicmp(_fullFn, GetResourcePath(), res_path_len) && WDL_IS_DIRCHAR(_fullFn[res_path_len]))
+		{
+			const int subdir_sz = strlen(_resSubDir);
+			if (!_strnicmp(_fullFn+res_path_len+1, _resSubDir, subdir_sz) && WDL_IS_DIRCHAR(_fullFn[res_path_len+1+subdir_sz]))
+			{
+				return _fullFn+res_path_len+1+subdir_sz+1;
+			}
+		}
 	}
-	else if (_shortFn)
-		*_shortFn = '\0';
+	return _fullFn;
 }
 
 // get a full resource path from a short filename
 // ex: EQ\JS\test.RfxChain -> C:\Documents and Settings\<user>\Application Data\REAPER\FXChains\EQ\JS\test.RfxChain
 // notes: 
-// - work with non existing files //JFB!! humm.. looks like it fails with non existing files
+// - work with non existing files
 // - no-op for non resource paths (c:\temp\test.RfxChain -> c:\temp\test.RfxChain)
 // - no-op for full resource paths 
 void GetFullResourcePath(const char* _resSubDir, const char* _shortFn, char* _fullFn, int _fullFnSize)
 {
-	if (_shortFn && _fullFn) 
+	if (_fullFn && _fullFnSize>0) *_fullFn = '\0';
+	else return;
+
+	if (_shortFn && *_shortFn) 
 	{
-		if (*_shortFn == '\0') {
-			*_fullFn = '\0';
-			return;
-		}
-		if (!strstr(_shortFn, GetResourcePath())) // no stristr: osx + utf-8
+		if (IsFullFileName(_shortFn))
 		{
-			char resFn[SNM_MAX_PATH] = "", resDir[SNM_MAX_PATH];
-			if (_snprintfStrict(resFn, sizeof(resFn), "%s%c%s%c%s", GetResourcePath(), PATH_SLASH_CHAR, _resSubDir, PATH_SLASH_CHAR, _shortFn) > 0)
-			{
-				lstrcpyn(resDir, resFn, sizeof(resDir));
-				if (char* p = strrchr(resDir, PATH_SLASH_CHAR)) *p = '\0';
-				if (FileOrDirExists(resDir)) {
-					lstrcpyn(_fullFn, resFn, _fullFnSize);
-					return;
-				}
-			}
+			lstrcpyn(_fullFn, _shortFn, _fullFnSize);
 		}
-		lstrcpyn(_fullFn, _shortFn, _fullFnSize);
+		else
+		{
+			snprintf(_fullFn, _fullFnSize, "%s%c%s%c%s", GetResourcePath(), PATH_SLASH_CHAR, _resSubDir, PATH_SLASH_CHAR, _shortFn);
+		}
 	}
-	else if (_fullFn)
-		*_fullFn = '\0';
 }
 
 // _trim: if true, remove empty lines + left trim
@@ -405,10 +394,10 @@ bool GenerateFilename(const char* _dir, const char* _name, const char* _ext, cha
 		char fn[SNM_MAX_PATH] = "";
 		bool slash = _dir[strlen(_dir)-1] == PATH_SLASH_CHAR;
 		if (slash) {
-			if (_snprintfStrict(fn, sizeof(fn), "%s%s.%s", _dir, _name, _ext) <= 0)
+			if (snprintfStrict(fn, sizeof(fn), "%s%s.%s", _dir, _name, _ext) <= 0)
 				return false;
 		} else {
-			if (_snprintfStrict(fn, sizeof(fn), "%s%c%s.%s", _dir, PATH_SLASH_CHAR, _name, _ext) <= 0)
+			if (snprintfStrict(fn, sizeof(fn), "%s%c%s.%s", _dir, PATH_SLASH_CHAR, _name, _ext) <= 0)
 				return false;
 		}
 
@@ -416,10 +405,10 @@ bool GenerateFilename(const char* _dir, const char* _name, const char* _ext, cha
 		while(FileOrDirExists(fn))
 		{
 			if (slash) {
-				if (_snprintfStrict(fn, sizeof(fn), "%s%s_%03d.%s", _dir, _name, ++i, _ext) <= 0)
+				if (snprintfStrict(fn, sizeof(fn), "%s%s_%03d.%s", _dir, _name, ++i, _ext) <= 0)
 					return false;
 			} else {
-				if (_snprintfStrict(fn, sizeof(fn), "%s%c%s_%03d.%s", _dir, PATH_SLASH_CHAR, _name, ++i, _ext) <= 0)
+				if (snprintfStrict(fn, sizeof(fn), "%s%c%s_%03d.%s", _dir, PATH_SLASH_CHAR, _name, ++i, _ext) <= 0)
 					return false;
 			}
 		}
@@ -495,7 +484,7 @@ void StringToExtensionConfig(WDL_FastString* _str, ProjectStateContext* _ctx)
 				curLineLen = SNM_MAX_CHUNK_LINE_LENGTH-1; // trim long lines
 			memcpy(curLine, pLine, curLineLen);
 			curLine[curLineLen] = '\0';
-			_ctx->AddLine("%s", curLine); // "%s" needed, see http://github.com/Jeff0S/sws/issues/358
+			_ctx->AddLine("%s", curLine); // "%s" needed, see http://github.com/reaper-oss/sws/issues/358
 		}
 	}
 }
@@ -564,12 +553,19 @@ void UpdatePrivateProfileString(const char* _appName, const char* _oldKey, const
 		WritePrivateProfileString(_appName, _newKey, buf, _newIniFn ? _newIniFn : _iniFn);
 }
 
-void SNM_UpgradeIniFiles()
+void SNM_UpgradeIniFiles(int _iniVersion)
 {
-	g_SNM_IniVersion = GetPrivateProfileInt("General", "IniFileUpgrade", 0, g_SNM_IniFn.Get());
-
-	if (g_SNM_IniVersion < 1) // < v2.1.0 #18
+	if (_iniVersion < 1) // < v2.1.0 #18
 	{
+		// move the old S&M.ini if needed/possible
+		WDL_FastString fn;
+		fn.SetFormatted(SNM_MAX_PATH, SNM_OLD_FORMATED_INI_FILE, GetExePath());
+		if (FileOrDirExists(fn.Get()))
+			MoveFile(fn.Get(), g_SNM_IniFn.Get()); // no check, best effort
+    
+		if (!FileOrDirExists(g_SNM_IniFn.Get()))
+			return; // no upgrade needed, e.g. SWS installed for the very first time
+    
 		// upgrade deprecated section names 
 		UpdatePrivateProfileSection("FXCHAIN", "FXChains", g_SNM_IniFn.Get());
 		UpdatePrivateProfileSection("FXCHAIN_VIEW", "RESOURCE_VIEW", g_SNM_IniFn.Get());
@@ -584,7 +580,7 @@ void SNM_UpgradeIniFiles()
 		UpdatePrivateProfileString("RESOURCE_VIEW", "AutoSaveDirPrjTemplate", "AutoSaveDirProjectTemplates", g_SNM_IniFn.Get());
 		UpdatePrivateProfileString("RESOURCE_VIEW", "AutoFillDirPrjTemplate", "AutoFillDirProjectTemplates", g_SNM_IniFn.Get());
 	}
-	if (g_SNM_IniVersion < 2) // < v2.1.0 #21
+	if (_iniVersion < 2) // < v2.1.0 #21
 	{
 		// move cycle actions to a new dedicated file (+ make backup if it already exists)
 		WDL_FastString fn;
@@ -595,12 +591,12 @@ void SNM_UpgradeIniFiles()
 		UpdatePrivateProfileSection("ME_LIST_CYCLACTIONS", "ME_List_Cyclactions", g_SNM_IniFn.Get(), g_SNM_CyclIniFn.Get());
 		UpdatePrivateProfileSection("ME_PIANO_CYCLACTIONS", "ME_Piano_Cyclactions", g_SNM_IniFn.Get(), g_SNM_CyclIniFn.Get());
 	}
-	if (g_SNM_IniVersion < 3) // < v2.1.0 #22
+	if (_iniVersion < 3) // < v2.1.0 #22
 	{
 		WritePrivateProfileString("RESOURCE_VIEW", "DblClick_To", NULL, g_SNM_IniFn.Get()); // remove key
 		UpdatePrivateProfileString("RESOURCE_VIEW", "FilterByPath", "Filter", g_SNM_IniFn.Get());
 	}
-	if (g_SNM_IniVersion < 4) // < v2.2.0
+	if (_iniVersion < 4) // < v2.2.0
 	{
 		UpdatePrivateProfileString("RESOURCE_VIEW", "AutoSaveTrTemplateWithItems", "AutoSaveTrTemplateFlags", g_SNM_IniFn.Get());
 #ifdef _WIN32
@@ -615,11 +611,11 @@ void SNM_UpgradeIniFiles()
 		UpdatePrivateProfileString("RESOURCE_VIEW", "DblClickdata/track_icons", "DblClickTrack_icons", g_SNM_IniFn.Get());
 #endif
 	}
-	if (g_SNM_IniVersion < 5) // < v2.2.0 #3
+	if (_iniVersion < 5) // < v2.2.0 #3
 		UpdatePrivateProfileSection("LAST_CUEBUS", "CueBuss1", g_SNM_IniFn.Get());
-	if (g_SNM_IniVersion < 6) // < v2.2.0 #6
+	if (_iniVersion < 6) // < v2.2.0 #6
 		WritePrivateProfileStruct("RegionPlaylist", NULL, NULL, 0, g_SNM_IniFn.Get()); // flush section
-	if (g_SNM_IniVersion < 7) // < v2.2.0 #16
+	if (_iniVersion < 7) // < v2.2.0 #16
 	{
 		UpdatePrivateProfileSection("RESOURCE_VIEW", "Resources", g_SNM_IniFn.Get());
 		UpdatePrivateProfileSection("NOTES_HELP_VIEW", "Notes", g_SNM_IniFn.Get());
@@ -632,7 +628,7 @@ void SNM_UpgradeIniFiles()
 		WritePrivateProfileString("NbOfActions", "S&M_NEXT_LIVE_CFG", NULL, g_SNM_IniFn.Get());
 		WritePrivateProfileString("NbOfActions", "S&M_PREVIOUS_LIVE_CFG", NULL, g_SNM_IniFn.Get());
 	}
-	if (g_SNM_IniVersion < 8) // < v2.4.0 #4
+	if (_iniVersion < 8) // < v2.4.0 #4
 	{
 		// deprecated
 		WritePrivateProfileString("Resources", "ProjectLoaderStartSlot", NULL, g_SNM_IniFn.Get());
@@ -644,8 +640,44 @@ void SNM_UpgradeIniFiles()
 		if (!GetPrivateProfileInt("NbOfActions", "S&M_EXCL_TGL", 0, g_SNM_IniFn.Get()))
 			WritePrivateProfileString("NbOfActions", "S&M_EXCL_TGL", NULL, g_SNM_IniFn.Get());
 	}
-
-	g_SNM_IniVersion = SNM_INI_FILE_VERSION;
+	if (_iniVersion < 9) // < v2.8.7 #0
+	{
+		// changed SNM_LIVECFG_NB_CONFIGS (4 -> 8)
+		WritePrivateProfileString("NbOfActions", "S&M_OPEN_LIVECFG_MONITOR", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_APPLY", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_PRELOAD", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_NEXT_LIVE_CFG", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_PREVIOUS_LIVE_CFG", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_PRELOAD_NEXT_LIVE_CFG", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_PRELOAD_PREVIOUS_LIVE_CFG", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_PRELOAD_LIVE_CFG", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_TGL", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_ON", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_OFF", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_MUTEBUT_TGL", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_MUTEBUT_ON", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_MUTEBUT_OFF", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_OFFLINEBUT_TGL", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_OFFLINEBUT_ON", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_OFFLINEBUT_OFF", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_DISARMBUT_TGL", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_DISARMBUT_ON", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_DISARMBUT_OFF", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_CC123_TGL", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_CC123_ON", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_CC123_OFF", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_FADES_TGL", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_FADES_ON", NULL, g_SNM_IniFn.Get());
+		WritePrivateProfileString("NbOfActions", "S&M_LIVECFG_FADES_OFF", NULL, g_SNM_IniFn.Get());
+    
+		// reaper_sws_whatsnew.txt is not deployed anymore (replaced with online help)
+		// note: on Win, this file is removed by NSIS installers
+#ifndef _WIN32
+		WDL_FastString fn;
+		fn.SetFormatted(SNM_MAX_PATH, "%s/UserPlugins/reaper_sws_whatsnew.txt", GetResourcePath());
+		SNM_DeleteFile(fn.Get(), false); // lazy cleanup
+#endif    
+	}
 }
 
 
@@ -653,51 +685,15 @@ void SNM_UpgradeIniFiles()
 // String helpers
 ///////////////////////////////////////////////////////////////////////////////
 
-// a _snprintf that ensures the string is always null terminated (but truncated if needed)
-// note: WDL_snprintf's return value cannot be trusted, see wdlcstring.h
-//       (using it could break other project members' code)
-int _snprintfSafe(char* _buf, size_t _n, const char* _fmt, ...)
-{
-	va_list va;
-	va_start(va, _fmt);
-	*_buf='\0';
-#if defined(_WIN32) && defined(_MSC_VER)
-	int l = _vsnprintf(_buf, _n, _fmt, va);
-	if (l < 0 || l >= (int)_n) {
-		_buf[_n-1]=0;
-		l = strlen(_buf);
-	}
-#else
-	// vsnprintf() on non-win32, always null terminates
-	int l = vsnprintf(_buf, _n, _fmt, va);
-	if (l>=(int)_n)
-		l=_n-1;
-#endif
-	va_end(va);
-	return l;
-}
-
-// a _snprintf that returns >=0 when the string is null terminated and not truncated
+// a snprintf that returns >=0 when the string is null terminated and not truncated
 // => callers must check the returned value 
-// note: WDL_snprintf's return value cannot be trusted, see wdlcstring.h
-//       (using it could break other project members' code)
-int _snprintfStrict(char* _buf, size_t _n, const char* _fmt, ...)
+int snprintfStrict(char* _buf, size_t _n, const char* _fmt, ...)
 {
 	va_list va;
 	va_start(va, _fmt);
-	*_buf='\0';
-#if defined(_WIN32) && defined(_MSC_VER)
-	int l = _vsnprintf(_buf, _n, _fmt, va);
-	if (l < 0 || l >= (int)_n) {
-		_buf[_n-1]=0;
-		l = -1;
-	}
-#else
-	// vsnprintf() on non-win32, always null terminates
 	int l = vsnprintf(_buf, _n, _fmt, va);
 	if (l>=(int)_n)
 		l = -1;
-#endif
 	va_end(va);
 	return l;
 }
@@ -749,22 +745,26 @@ const char* FindFirstRN(const char* _str, bool _anyOrder)
 
 char* ShortenStringToFirstRN(char* _str, bool _anyOrder)
 {
-	char* p = NULL;
-	if ((p = (char*)FindFirstRN(_str, _anyOrder)))
-		*p = '\0'; 
+	char* p = (char*)FindFirstRN(_str, _anyOrder);
+	if (p) *p = '\0'; 
 	return p;
 }
 
-// replace "%02d " with _replaceCh in _str
-void Replace02d(char* _str, char _replaceCh)
+// replace the first _str with _replaceCh in _strInOut
+bool ReplaceWithChar(char* _strInOut, const char* _str, const char _replaceCh)
 {
-	if (_str && *_str)
-		if (char* p = strstr(_str, "%02d"))
+	if (_strInOut && *_strInOut)
+	{
+		if (char* p = strstr(_strInOut, _str))
 		{
+			const int str_len = strlen(_str);
 			p[0] = _replaceCh;
-			if (p[4]) memmove((char*)(p+1), p+4, strlen(p+4)+1);
+			if (p[str_len]) memmove((char*)(p+1), p+str_len, strlen(p+str_len)+1);
 			else p[1] = '\0';
+			return true;
 		}
+	}
+	return false;
 }
 
 // _outItems: it's up to the caller to unalloc things
@@ -814,7 +814,7 @@ double SeekPlay(double _pos, bool _moveView)
 	PreventUIRefresh(-1);
 #ifdef _SNM_DEBUG
 	char dbg[256] = "";
-	_snprintfSafe(dbg, sizeof(dbg), "SeekPlay() - Pos: %f\n", _pos);
+	snprintf(dbg, sizeof(dbg), "SeekPlay() - Pos: %f\n", _pos);
 	OutputDebugString(dbg);
 #endif
 	return cursorpos;
@@ -825,9 +825,8 @@ double SeekPlay(double _pos, bool _moveView)
 // Action helpers
 ///////////////////////////////////////////////////////////////////////////////
 
-// overrides the API's NamedCommandLookup: works for all action sections, and
-// fixes a REAPER BUG: NamedCommandLookup("65534") returns "65534" although 
-// this action does not exist (= noop's cmdId-1)
+// "fixes" the API's NamedCommandLookup, e.g. NamedCommandLookup("65534")
+// returns "65534" although this action doesn't exist
 // _hardCheck: if true, do more tests on the returned command id because the 
 //             API's NamedCommandLookup can return an id although the related 
 //             action is not registered yet, ex: at init time, when an action
@@ -840,9 +839,7 @@ int SNM_NamedCommandLookup(const char* _custId, KbdSectionInfo* _section, bool _
 	int cmdId = 0;
 	if (_custId && *_custId)
 	{
-		//JFB! cool finding (REAPER v4.34rc1):
-		// for macros/scripts, it turns out NamedCommandLookup() works for all sections (!)
-		// ok for 3rd party sections too because they can't register custom ids (yet)
+		// NamedCommandLookup() works for all sections (unique command ids accross sections)
 		if (*_custId == '_')
 			cmdId = NamedCommandLookup(_custId);
 		else
@@ -883,7 +880,7 @@ const char* SNM_GetTextFromCmd(int _cmdId, KbdSectionInfo* _section)
 bool LoadKbIni(WDL_PtrList<WDL_FastString>* _out)
 {
 	char buf[SNM_MAX_PATH] = "";
-	if (_out && _snprintfStrict(buf, sizeof(buf), SNM_KB_INI_FILE, GetResourcePath()) > 0)
+	if (_out && snprintfStrict(buf, sizeof(buf), SNM_KB_INI_FILE, GetResourcePath()) > 0)
 	{
 		_out->Empty(true);
 		if (FILE* f = fopenUTF8(buf, "r"))
@@ -1094,29 +1091,51 @@ bool LearnAction(KbdSectionInfo* _section, int _cmdId)
 	return DoActionShortcutDialog(GetMainHwnd(), _section, _cmdId, nbShortcuts);
 }
 
-bool GetSectionURL(bool _alr, const char* _section, char* _sectionURL, int _sectionURLSize)
+bool GetSectionURL(bool _alr, KbdSectionInfo* _section, char* _sectionURL, int _sectionURLSize)
 {
-	if (!_section || !_sectionURL)
+	if (!_sectionURL || _sectionURLSize<=0)
 		return false;
+  
+	if (!_section)
+		_section = SNM_GetActionSection(SNM_SEC_IDX_MAIN);
 
 	if (_alr)
 	{
-		if (!_stricmp(_section, __localizeFunc("Main","accel_sec",0)) || !strcmp(_section, __localizeFunc("Main (alt recording)","accel_sec",0)))
-			lstrcpyn(_sectionURL, "ALR_Main", _sectionURLSize);
-		else if (!_stricmp(_section, __localizeFunc("Media Explorer","accel_sec",0)))
-			lstrcpyn(_sectionURL, "ALR_MediaExplorer", _sectionURLSize);
-		else if (!_stricmp(_section, __localizeFunc("MIDI Editor","accel_sec",0)))
-			lstrcpyn(_sectionURL, "ALR_MIDIEditor", _sectionURLSize);
-		else if (!_stricmp(_section, __localizeFunc("MIDI Event List Editor","accel_sec",0)))
-			lstrcpyn(_sectionURL, "ALR_MIDIEvtList", _sectionURLSize);
-		else if (!_stricmp(_section, __localizeFunc("MIDI Inline Editor","accel_sec",0)))
-			lstrcpyn(_sectionURL, "ALR_MIDIInline", _sectionURLSize);
-		else
-			return false;
+		switch (_section->uniqueID)
+		{
+			case 0:
+			case 100:
+				lstrcpyn(_sectionURL, "ALR_Main", _sectionURLSize);
+				break;
+			case 32060:
+				lstrcpyn(_sectionURL, "ALR_MIDIEditor", _sectionURLSize);
+				break;
+			case 32061:
+				lstrcpyn(_sectionURL, "ALR_MIDIEvtList", _sectionURLSize);
+				break;
+			case 32062:
+				lstrcpyn(_sectionURL, "ALR_MIDIInline", _sectionURLSize);
+				break;
+			case 32063:
+				lstrcpyn(_sectionURL, "ALR_MediaExplorer", _sectionURLSize);
+				break;
+			default:
+				return false;
+		}
 	}
 	else
-		lstrcpyn(_sectionURL, _section, _sectionURLSize);
+	{
+		lstrcpyn(_sectionURL, __localizeFunc(_section->name,"accel_sec",0), _sectionURLSize);
+	}
 	return true;
+}
+
+bool IsTakePolarityFlipped(MediaItem_Take* take)
+{
+	if (*(double*)GetSetMediaItemTakeInfo(take, "D_VOL", NULL) < 0.0)
+		return true;
+	else
+		return false;
 }
 
 
@@ -1169,7 +1188,7 @@ bool FNV64(const char* _strIn, char* _strOut)
 			h=FNV64(h,(unsigned char *)&c,1);
 	}
 	h=FNV64(h,(unsigned char *)"",1);
-	return (_snprintfStrict(_strOut, 65, "%08X%08X",(int)(h>>32),(int)(h&0xffffffff)) > 0);
+	return (snprintfStrict(_strOut, 65, "%08X%08X",(int)(h>>32),(int)(h&0xffffffff)) > 0);
 }
 
 #endif
